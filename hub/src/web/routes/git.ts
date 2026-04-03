@@ -31,6 +31,14 @@ async function runRpc<T>(fn: () => Promise<T>): Promise<T | { success: false; er
     }
 }
 
+function isAccessDenied(result: unknown): boolean {
+    if (result && typeof result === 'object' && 'success' in result && 'error' in result) {
+        const r = result as { success: boolean; error: string }
+        return !r.success && typeof r.error === 'string' && r.error.includes('Access denied')
+    }
+    return false
+}
+
 export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
@@ -127,6 +135,9 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
         }
 
         const result = await runRpc(() => engine.readSessionFile(sessionResult.sessionId, parsed.data.path))
+        if (isAccessDenied(result)) {
+            return c.json(result, 403)
+        }
         return c.json(result)
     })
 
@@ -207,6 +218,9 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
 
         const path = parsed.data.path ?? ''
         const result = await runRpc(() => engine.listDirectory(sessionResult.sessionId, path))
+        if (isAccessDenied(result)) {
+            return c.json(result, 403)
+        }
         return c.json(result)
     })
 

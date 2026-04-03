@@ -3,7 +3,8 @@
  */
 
 import { io, type Socket } from 'socket.io-client'
-import { stat } from 'node:fs/promises'
+import { stat, readdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { logger } from '@/ui/logger'
 import { configuration } from '@/configuration'
 import type { Update, UpdateMachineBody } from '@hapi/protocol'
@@ -64,6 +65,33 @@ interface PathExistsResponse {
     exists: Record<string, boolean>
 }
 
+interface MachineListDirectoryRequest {
+    path: string
+}
+
+interface MachineDirectoryEntry {
+    name: string
+    type: 'file' | 'directory' | 'other'
+    size?: number
+    modified?: number
+}
+
+interface MachineListDirectoryResponse {
+    success: boolean
+    entries?: MachineDirectoryEntry[]
+    error?: string
+}
+
+interface MachineReadFileRequest {
+    path: string
+}
+
+interface MachineReadFileResponse {
+    success: boolean
+    content?: string
+    error?: string
+}
+
 export class ApiMachineClient {
     private socket!: Socket<ServerToRunnerEvents, RunnerToServerEvents>
     private keepAliveInterval: NodeJS.Timeout | null = null
@@ -97,6 +125,68 @@ export class ApiMachineClient {
             }))
 
             return { exists }
+        })
+
+        this.rpcHandlerManager.registerHandler<MachineListDirectoryRequest, MachineListDirectoryResponse>('machine-list-directory', async (params) => {
+            const targetPath = (params?.path || '').trim()
+            if (!targetPath) {
+                return { success: false, error: 'Path is required' }
+            }
+
+            try {
+                const entries = await readdir(targetPath, { withFileTypes: true })
+                const directoryEntries: MachineDirectoryEntry[] = await Promise.all(
+                    entries.map(async (entry) => {
+                        const fullPath = join(targetPath, entry.name)
+                        let type: 'file' | 'directory' | 'other' = 'other'
+                        let size: number | undefined
+                        let modified: number | undefined
+
+                        if (entry.isDirectory()) {
+                            type = 'directory'
+                        } else if (entry.isFile()) {
+                            type = 'file'
+                        }
+
+                        if (!entry.isSymbolicLink()) {
+                            try {
+                                const stats = await stat(fullPath)
+                                size = stats.size
+                                modified = stats.mtime.getTime()
+                            } catch {
+                                // skip stat errors
+                            }
+                        }
+
+                        return { name: entry.name, type, size, modified }
+                    })
+                )
+
+                directoryEntries.sort((a, b) => {
+                    if (a.type === 'directory' && b.type !== 'directory') return -1
+                    if (a.type !== 'directory' && b.type === 'directory') return 1
+                    return a.name.localeCompare(b.name)
+                })
+
+                return { success: true, entries: directoryEntries }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Failed to list directory' }
+            }
+        })
+
+        this.rpcHandlerManager.registerHandler<MachineReadFileRequest, MachineReadFileResponse>('machine-read-file', async (params) => {
+            const targetPath = (params?.path || '').trim()
+            if (!targetPath) {
+                return { success: false, error: 'Path is required' }
+            }
+
+            try {
+                const buffer = await readFile(targetPath)
+                const content = buffer.toString('base64')
+                return { success: true, content }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Failed to read file' }
+            }
         })
     }
 

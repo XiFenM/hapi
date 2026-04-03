@@ -73,6 +73,9 @@ export function getOrCreateSession(
 
     const metadataJson = JSON.stringify(metadata)
     const agentStateJson = agentState === null || agentState === undefined ? null : JSON.stringify(agentState)
+    const machineId = (metadata && typeof metadata === 'object' && 'machineId' in metadata)
+        ? (metadata as Record<string, unknown>).machineId as string | null
+        : null
 
     db.prepare(`
         INSERT INTO sessions (
@@ -84,7 +87,7 @@ export function getOrCreateSession(
             todos, todos_updated_at,
             active, active_at, seq
         ) VALUES (
-            @id, @tag, @namespace, NULL, @created_at, @updated_at,
+            @id, @tag, @namespace, @machine_id, @created_at, @updated_at,
             @metadata, 1,
             @agent_state, 1,
             @model,
@@ -96,6 +99,7 @@ export function getOrCreateSession(
         id,
         tag,
         namespace,
+        machine_id: machineId ?? null,
         created_at: now,
         updated_at: now,
         metadata: metadataJson,
