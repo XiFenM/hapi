@@ -161,7 +161,42 @@ export class RpcGateway {
     }
 
     async readMachineFile(machineId: string, path: string): Promise<RpcReadFileResponse> {
-        return await this.machineRpc(machineId, 'machine-read-file', { path }) as RpcReadFileResponse
+        const CHUNK_SIZE = 512 * 1024       // 512KB per chunk (base64 ≈ 700KB, under Socket.IO 1MB limit)
+        const CHUNK_THRESHOLD = CHUNK_SIZE  // files > 512KB use chunked read
+
+        // Get file size first
+        const statResult = await this.machineRpc(machineId, 'machine-file-stat', { path }) as { success: boolean; size?: number; error?: string }
+        if (!statResult.success) {
+            return { success: false, error: statResult.error || 'Failed to stat file' }
+        }
+        const fileSize = statResult.size ?? 0
+
+        // Small files: one-shot read
+        if (fileSize <= CHUNK_THRESHOLD) {
+            return await this.machineRpc(machineId, 'machine-read-file', { path }) as RpcReadFileResponse
+        }
+
+        // Large files: chunked read
+        const chunks: string[] = []
+        let offset = 0
+        while (offset < fileSize) {
+            const length = Math.min(CHUNK_SIZE, fileSize - offset)
+            const chunk = await this.machineRpc(machineId, 'machine-read-file-chunk', { path, offset, length }) as {
+                success: boolean; content?: string; bytesRead?: number; error?: string
+            }
+            if (!chunk.success || !chunk.content) {
+                return { success: false, error: chunk.error || `Failed to read chunk at offset ${offset}` }
+            }
+            chunks.push(chunk.content)
+            const bytesRead = chunk.bytesRead ?? length
+            offset += bytesRead
+            if (bytesRead < length) break  // EOF
+        }
+
+        // Decode all base64 chunks, concatenate, re-encode
+        const buffers = chunks.map(c => Buffer.from(c, 'base64'))
+        const combined = Buffer.concat(buffers)
+        return { success: true, content: combined.toString('base64') }
     }
 
     async checkPathsExist(machineId: string, paths: string[]): Promise<Record<string, boolean>> {
@@ -242,11 +277,11 @@ export class RpcGateway {
         return await this.rpcCall(`${sessionId}:${method}`, params)
     }
 
-    private async machineRpc(machineId: string, method: string, params: unknown): Promise<unknown> {
-        return await this.rpcCall(`${machineId}:${method}`, params)
+    private async machineRpc(machineId: string, method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
+        return await this.rpcCall(`${machineId}:${method}`, params, timeoutMs)
     }
 
-    private async rpcCall(method: string, params: unknown): Promise<unknown> {
+    private async rpcCall(method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
         const socketId = this.rpcRegistry.getSocketIdForMethod(method)
         if (!socketId) {
             throw new Error(`RPC handler not registered: ${method}`)
@@ -257,7 +292,7 @@ export class RpcGateway {
             throw new Error(`RPC socket disconnected: ${method}`)
         }
 
-        const response = await socket.timeout(30_000).emitWithAck('rpc-request', {
+        const response = await socket.timeout(timeoutMs ?? 30_000).emitWithAck('rpc-request', {
             method,
             params: JSON.stringify(params)
         }) as unknown

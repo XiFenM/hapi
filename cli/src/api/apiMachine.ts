@@ -92,6 +92,29 @@ interface MachineReadFileResponse {
     error?: string
 }
 
+interface MachineReadFileChunkRequest {
+    path: string
+    offset: number
+    length: number
+}
+
+interface MachineReadFileChunkResponse {
+    success: boolean
+    content?: string  // base64
+    bytesRead?: number
+    error?: string
+}
+
+interface MachineFileStatRequest {
+    path: string
+}
+
+interface MachineFileStatResponse {
+    success: boolean
+    size?: number
+    error?: string
+}
+
 export class ApiMachineClient {
     private socket!: Socket<ServerToRunnerEvents, RunnerToServerEvents>
     private keepAliveInterval: NodeJS.Timeout | null = null
@@ -186,6 +209,38 @@ export class ApiMachineClient {
                 return { success: true, content }
             } catch (error) {
                 return { success: false, error: error instanceof Error ? error.message : 'Failed to read file' }
+            }
+        })
+
+        this.rpcHandlerManager.registerHandler<MachineFileStatRequest, MachineFileStatResponse>('machine-file-stat', async (params) => {
+            const targetPath = (params?.path || '').trim()
+            if (!targetPath) {
+                return { success: false, error: 'Path is required' }
+            }
+
+            try {
+                const stats = await stat(targetPath)
+                return { success: true, size: stats.size }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Failed to stat file' }
+            }
+        })
+
+        this.rpcHandlerManager.registerHandler<MachineReadFileChunkRequest, MachineReadFileChunkResponse>('machine-read-file-chunk', async (params) => {
+            const targetPath = (params?.path || '').trim()
+            if (!targetPath) {
+                return { success: false, error: 'Path is required' }
+            }
+            const offset = params?.offset ?? 0
+            const length = params?.length ?? (2 * 1024 * 1024)
+
+            try {
+                const fullBuffer = await readFile(targetPath)
+                const chunk = fullBuffer.subarray(offset, offset + length)
+                const content = chunk.toString('base64')
+                return { success: true, content, bytesRead: chunk.length }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Failed to read file chunk' }
             }
         })
     }

@@ -32,13 +32,15 @@ echo "🚀 启动本机 Runner..."
 echo "📋 部署到容器 $CONTAINER..."
 docker exec "$CONTAINER" bash -c "$TARGET runner stop 2>/dev/null" || true
 sleep 1
+# 删除可能存在的符号链接，确保 docker cp 写入实际文件
+docker exec "$CONTAINER" rm -f "$TARGET"
 docker cp "$TARGET" "$CONTAINER:$TARGET"
 
 echo "🚀 启动容器内 Runner..."
 docker exec "$CONTAINER" bash -c "source /root/.bashrc && $TARGET runner start"
 
 sleep 3
-RUNNER=$(docker exec "$CONTAINER" bash -c "ps aux | grep 'hapi runner' | grep -v grep" 2>/dev/null || true)
+RUNNER=$(docker exec "$CONTAINER" bash -c "ps aux | grep 'hapi.cjs runner' | grep -v grep" 2>/dev/null || true)
 if [ -n "$RUNNER" ]; then
     echo "✅ 部署完成"
     echo "   Hub: $(systemctl is-active hapi)"
