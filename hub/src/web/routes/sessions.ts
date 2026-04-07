@@ -1,4 +1,4 @@
-import { getPermissionModesForFlavor, isPermissionModeAllowedForFlavor, toSessionSummary } from '@hapi/protocol'
+import { getPermissionModesForFlavor, isPermissionModeAllowedForFlavor, toSessionSummary, CLAUDE_MODEL_PRESETS, CLAUDE_MODEL_LABELS, GEMINI_MODEL_PRESETS, GEMINI_MODEL_LABELS } from '@hapi/protocol'
 import { CodexCollaborationModeSchema, PermissionModeSchema } from '@hapi/protocol/schemas'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -463,6 +463,67 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return c.json({
                 success: false,
                 error: error instanceof Error ? error.message : 'Failed to list skills'
+            })
+        }
+    })
+
+    app.post('/sessions/:id/compact', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        try {
+            await engine.sendMessage(sessionResult.sessionId, {
+                text: '/compact',
+                sentFrom: 'webapp'
+            })
+            return c.json({ ok: true })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to trigger compact'
+            return c.json({ error: message }, 409)
+        }
+    })
+
+    app.get('/sessions/:id/models', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const flavor = sessionResult.session.metadata?.flavor ?? 'claude'
+        const currentModel = sessionResult.session.model ?? null
+
+        if (flavor === 'claude') {
+            return c.json({
+                flavor,
+                currentModel,
+                presets: CLAUDE_MODEL_PRESETS.map(id => ({ id, label: CLAUDE_MODEL_LABELS[id] })),
+                supportsCustomModel: true
+            })
+        } else if (flavor === 'gemini') {
+            return c.json({
+                flavor,
+                currentModel,
+                presets: GEMINI_MODEL_PRESETS.map(id => ({ id, label: GEMINI_MODEL_LABELS[id] })),
+                supportsCustomModel: true
+            })
+        } else {
+            return c.json({
+                flavor,
+                currentModel,
+                presets: [],
+                supportsCustomModel: false
             })
         }
     })
