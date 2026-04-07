@@ -40,7 +40,7 @@ echo "🚀 启动容器内 Runner..."
 docker exec "$CONTAINER" bash -c "source /root/.bashrc && $TARGET runner start"
 
 sleep 3
-RUNNER=$(docker exec "$CONTAINER" bash -c "ps aux | grep 'hapi.cjs runner' | grep -v grep" 2>/dev/null || true)
+RUNNER=$(docker exec "$CONTAINER" bash -c "ps aux | grep 'hapi runner' | grep -v grep" 2>/dev/null || true)
 if [ -n "$RUNNER" ]; then
     echo "✅ 部署完成"
     echo "   Hub: $(systemctl is-active hapi)"
