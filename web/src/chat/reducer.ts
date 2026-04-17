@@ -58,7 +58,14 @@ export function reduceChatBlocks(
         if (toolIdsInMessages.has(id)) continue
         if (rootResult.toolBlocksById.has(id)) continue
 
-        const createdAt = entry.permission.createdAt ?? Date.now()
+        // Must be deterministic across renders — Date.now() would change
+        // the block's createdAt every tick, breaking reconcile identity
+        // equality and causing the permission card (incl. allow/deny
+        // buttons) to flicker out when other state updates arrive.
+        const createdAt = entry.permission.createdAt
+            ?? entry.permission.completedAt
+            ?? oldestMessageTime
+            ?? 0
 
         // Skip permissions that are older than the oldest message in the current view.
         // These will be shown when the user loads older messages.

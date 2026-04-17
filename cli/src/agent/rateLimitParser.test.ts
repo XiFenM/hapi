@@ -150,4 +150,51 @@ describe('parseRateLimitText', () => {
 
         expect(result).toBeNull();
     });
+
+    it('strips trailing allowed rate_limit_event appended to regular text', () => {
+        const json = JSON.stringify({
+            type: 'output',
+            data: {
+                parentUuid: 'abc',
+                sessionId: 'sess',
+                type: 'rate_limit_event',
+                rate_limit_info: {
+                    status: 'allowed',
+                    resetsAt: 1776409200,
+                    rateLimitType: 'five_hour',
+                    overageStatus: 'rejected',
+                },
+            },
+        });
+        const result = parseRateLimitText(`可以看到。图片是一张搞笑表情包。\n${json}`);
+
+        expect(result).toEqual({
+            suppress: true,
+            leadingText: '可以看到。图片是一张搞笑表情包。',
+        });
+    });
+
+    it('strips trailing allowed_warning rate_limit_event and preserves leading text', () => {
+        const json = JSON.stringify({
+            type: 'rate_limit_event',
+            rate_limit_info: {
+                status: 'allowed_warning',
+                resetsAt: 1774278000,
+                rateLimitType: 'five_hour',
+                utilization: 0.9,
+            },
+        });
+        const result = parseRateLimitText(`response body\n\n${json}`);
+
+        expect(result).toEqual({
+            suppress: false,
+            message: { type: 'text', text: 'Claude AI usage limit warning|1774278000|90|five_hour' },
+            leadingText: 'response body',
+        });
+    });
+
+    it('returns null when trailing JSON is not a rate_limit_event', () => {
+        const trailing = JSON.stringify({ foo: 'bar' });
+        expect(parseRateLimitText(`regular text\n${trailing}`)).toBeNull();
+    });
 });

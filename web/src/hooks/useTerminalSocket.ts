@@ -123,7 +123,7 @@ export function useTerminalSocket(options: UseTerminalSocketOptions): {
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
-            transports: ['polling', 'websocket'],
+            transports: ['websocket', 'polling'],
             autoConnect: false
         })
 

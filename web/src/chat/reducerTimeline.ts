@@ -180,6 +180,15 @@ export function reduceTimeline(
                             const child = reduceTimeline(sidechain, context)
                             hasReadyEvent = hasReadyEvent || child.hasReadyEvent
                             block.children = child.blocks
+                            // Propagate subagent tool ids up so the outer permission
+                            // reducer won't create an orphan permission-only card at
+                            // root level when a subagent request arrives before its
+                            // tool_use message is materialized.
+                            for (const [id, childBlock] of child.toolBlocksById) {
+                                if (!toolBlocksById.has(id)) {
+                                    toolBlocksById.set(id, childBlock)
+                                }
+                            }
                         }
                     }
                     continue

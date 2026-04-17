@@ -160,6 +160,9 @@ export class AcpMessageHandler {
             if (text) {
                 const rateLimit = parseRateLimitText(text);
                 if (rateLimit) {
+                    if (rateLimit.leadingText) {
+                        this.appendTextChunk(rateLimit.leadingText);
+                    }
                     if (rateLimit.suppress) {
                         return;
                     }

@@ -105,11 +105,11 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
     if (event.type === 'compact') {
         return { icon: '📦', text: 'Conversation compacted' }
     }
-    try {
-        return { icon: null, text: JSON.stringify(event) }
-    } catch {
-        return { icon: null, text: String(event.type) }
-    }
+    // Unknown event type: suppress rather than dumping raw JSON into the chat.
+    // Known offenders include transcript-style rate_limit_event frames that
+    // slipped past the CLI-side parser. Keep empty icon/text so renderers
+    // collapse the block instead of showing `{"type":"output",...}`.
+    return { icon: null, text: '' }
 }
 
 export function renderEventLabel(event: AgentEvent): string {

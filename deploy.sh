@@ -21,6 +21,10 @@ echo "🛑 停止 Hub..."
 systemctl stop hapi
 
 echo "📋 部署到本机..."
+# rm + cp (not cp -f) to avoid "Text file busy" when an active
+# `hapi claude` session still holds the old binary. Unlinking the
+# dirent is safe — running processes keep their own inode.
+rm -f "$TARGET"
 cp "$EXE" "$TARGET"
 
 echo "🚀 启动 Hub..."
