@@ -111,6 +111,20 @@ export class AcpMessageHandler {
         }
         const text = this.bufferedText;
         this.bufferedText = '';
+        // Re-check the accumulated buffer: a rate_limit_event JSON may
+        // have arrived across multiple chunks where no single chunk was
+        // parseable, letting the raw JSON leak into the chat.
+        const rateLimit = parseRateLimitText(text);
+        if (rateLimit) {
+            if (rateLimit.leadingText) {
+                this.onMessage({ type: 'text', text: rateLimit.leadingText });
+            }
+            if (rateLimit.suppress) {
+                return;
+            }
+            this.onMessage(rateLimit.message);
+            return;
+        }
         this.onMessage({ type: 'text', text });
     }
 

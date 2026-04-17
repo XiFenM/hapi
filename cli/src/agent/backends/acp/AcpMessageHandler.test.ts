@@ -338,6 +338,42 @@ describe('AcpMessageHandler', () => {
         expect(messages).toEqual([{ type: 'text', text: 'part one part two' }]);
     });
 
+    it('suppresses rate_limit_event even when split across multiple chunks', () => {
+        const messages: AgentMessage[] = [];
+        const handler = new AcpMessageHandler((message) => messages.push(message));
+
+        // Emulate Claude CLI stream-json envelope arriving in two chunks
+        // where neither chunk alone is parseable JSON.
+        const full = JSON.stringify({
+            type: 'output',
+            data: {
+                parentUuid: 'p',
+                isSidechain: false,
+                type: 'rate_limit_event',
+                rate_limit_info: {
+                    status: 'allowed',
+                    resetsAt: 1776427200,
+                    rateLimitType: 'five_hour',
+                },
+                session_id: 's',
+            },
+        });
+        const mid = Math.floor(full.length / 2);
+        handler.handleUpdate({
+            sessionUpdate: ACP_SESSION_UPDATE_TYPES.agentMessageChunk,
+            content: { type: 'text', text: full.slice(0, mid) }
+        });
+        handler.handleUpdate({
+            sessionUpdate: ACP_SESSION_UPDATE_TYPES.agentMessageChunk,
+            content: { type: 'text', text: full.slice(mid) }
+        });
+
+        handler.flushText();
+
+        // No raw JSON should reach the UI.
+        expect(messages).toEqual([]);
+    });
+
     it('allows kind fallback to replace placeholder tool name', () => {
         const messages: AgentMessage[] = [];
         const handler = new AcpMessageHandler((message) => messages.push(message));
