@@ -27,6 +27,13 @@ const pathsExistsSchema = z.object({
     paths: z.array(z.string().min(1)).max(1000)
 })
 
+const claudeOptionsSchema = z.object({
+    models: z.array(z.object({
+        id: z.string().min(1).max(200),
+        label: z.string().min(1).max(200)
+    })).max(50)
+})
+
 export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
@@ -88,6 +95,33 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
 
         const models = machine.metadata?.claudeModels ?? null
         return c.json({ models })
+    })
+
+    app.put('/machines/:id/claude-options', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not connected' }, 503)
+        }
+
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) {
+            return machine
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = claudeOptionsSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        try {
+            const models = await engine.applyMachineClaudeOptions(machineId, parsed.data.models)
+            return c.json({ models })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to update claude options'
+            return c.json({ error: message }, 500)
+        }
     })
 
     app.post('/machines/:id/paths/exists', async (c) => {

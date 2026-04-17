@@ -315,6 +315,24 @@ export class SyncEngine {
         this.sessionCache.applySessionConfig(sessionId, applied)
     }
 
+    async applyMachineClaudeOptions(
+        machineId: string,
+        models: Array<{ id: string; label: string }>
+    ): Promise<Array<{ id: string; label: string }>> {
+        const result = await this.rpcGateway.requestMachineClaudeOptions(machineId, models)
+        if (!result || typeof result !== 'object') {
+            throw new Error('Invalid response from machine claude options RPC')
+        }
+        const applied = (result as { models?: unknown }).models
+        if (!Array.isArray(applied)) {
+            throw new Error('Missing applied machine claude options')
+        }
+        // Refresh the cached machine so subsequent GETs return the new value
+        // without waiting for the runner's metadata-update broadcast.
+        this.machineCache.refreshMachine(machineId)
+        return applied as Array<{ id: string; label: string }>
+    }
+
     async spawnSession(
         machineId: string,
         directory: string,

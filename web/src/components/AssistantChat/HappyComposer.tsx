@@ -52,6 +52,7 @@ export function HappyComposer(props: {
     controlledByUser?: boolean
     agentFlavor?: string | null
     claudeModels?: Array<{ id: string; label: string }> | null
+    onEditClaudeModels?: () => void
     onCollaborationModeChange?: (mode: CodexCollaborationMode) => void
     onPermissionModeChange?: (mode: PermissionMode) => void
     onModelChange?: (model: string | null) => void
@@ -82,6 +83,7 @@ export function HappyComposer(props: {
         controlledByUser = false,
         agentFlavor,
         claudeModels,
+        onEditClaudeModels,
         onCollaborationModeChange,
         onPermissionModeChange,
         onModelChange,
@@ -572,6 +574,24 @@ export function HappyComposer(props: {
                                         </span>
                                     </button>
                                 ))}
+                                {onEditClaudeModels ? (
+                                    <button
+                                        type="button"
+                                        disabled={controlsDisabled}
+                                        className={`flex w-full items-center px-3 py-1.5 text-left text-xs ${
+                                            controlsDisabled
+                                                ? 'cursor-not-allowed opacity-50'
+                                                : 'cursor-pointer hover:bg-[var(--app-secondary-bg)]'
+                                        } text-[var(--app-hint)] hover:text-[var(--app-link)]`}
+                                        onClick={() => {
+                                            setShowSettings(false)
+                                            onEditClaudeModels()
+                                        }}
+                                        onMouseDown={(e) => e.preventDefault()}
+                                    >
+                                        Edit models…
+                                    </button>
+                                ) : null}
                             </div>
                         ) : null}
 

@@ -17,6 +17,7 @@ import { reduceChatBlocks } from '@/chat/reducer'
 import { reconcileChatBlocks } from '@/chat/reconcile'
 import { HappyComposer } from '@/components/AssistantChat/HappyComposer'
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
+import { EditMachineClaudeModelsDialog } from '@/components/EditMachineClaudeModelsDialog'
 import { useHappyRuntime } from '@/lib/assistant-runtime'
 import { createAttachmentAdapter } from '@/lib/attachmentAdapter'
 import { findUnsupportedCodexBuiltinSlashCommand } from '@/lib/codexSlashCommands'
@@ -63,10 +64,11 @@ export function SessionChat(props: {
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const agentFlavor = props.session.metadata?.flavor ?? null
     const sessionMachineId = props.session.metadata?.machineId ?? null
-    const { models: machineClaudeModels } = useMachineClaudeOptions(
+    const { models: machineClaudeModels, save: saveMachineClaudeModels } = useMachineClaudeOptions(
         props.api,
         agentFlavor === 'claude' ? sessionMachineId : null
     )
+    const [isEditClaudeModelsOpen, setIsEditClaudeModelsOpen] = useState(false)
     const controlledByUser = props.session.agentState?.controlledByUser === true
     const codexCollaborationModeSupported = agentFlavor === 'codex' && !controlledByUser
     const { abortSession, switchSession, setPermissionMode, setCollaborationMode, setModel, setEffort } = useSessionActions(
@@ -382,6 +384,11 @@ export function SessionChat(props: {
                         effort={props.session.effort}
                         agentFlavor={agentFlavor}
                         claudeModels={machineClaudeModels}
+                        onEditClaudeModels={
+                            agentFlavor === 'claude' && sessionMachineId
+                                ? () => setIsEditClaudeModelsOpen(true)
+                                : undefined
+                        }
                         active={props.session.active}
                         allowSendWhenInactive
                         thinking={props.session.thinking}
@@ -416,6 +423,13 @@ export function SessionChat(props: {
                     onStatusChange={voice.setStatus}
                 />
             )}
+
+            <EditMachineClaudeModelsDialog
+                isOpen={isEditClaudeModelsOpen}
+                onClose={() => setIsEditClaudeModelsOpen(false)}
+                initialModels={machineClaudeModels}
+                onSave={saveMachineClaudeModels}
+            />
         </div>
     )
 }

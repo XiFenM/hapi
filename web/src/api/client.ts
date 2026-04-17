@@ -374,6 +374,16 @@ export class ApiClient {
         return await this.request(`/api/machines/${encodeURIComponent(machineId)}/claude-options`)
     }
 
+    async setMachineClaudeOptions(
+        machineId: string,
+        models: Array<{ id: string; label: string }>
+    ): Promise<{ models: Array<{ id: string; label: string }> }> {
+        return await this.request(`/api/machines/${encodeURIComponent(machineId)}/claude-options`, {
+            method: 'PUT',
+            body: JSON.stringify({ models })
+        })
+    }
+
     async checkMachinePathsExists(
         machineId: string,
         paths: string[]

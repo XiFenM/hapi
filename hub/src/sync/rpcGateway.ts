@@ -101,6 +101,13 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'set-session-config', config)
     }
 
+    async requestMachineClaudeOptions(
+        machineId: string,
+        models: Array<{ id: string; label: string }>
+    ): Promise<unknown> {
+        return await this.machineRpc(machineId, 'set-machine-claude-options', { models })
+    }
+
     async killSession(sessionId: string): Promise<void> {
         await this.sessionRpc(sessionId, 'killSession', {})
     }

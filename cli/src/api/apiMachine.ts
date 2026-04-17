@@ -5,17 +5,23 @@
 import { io, type Socket } from 'socket.io-client'
 import { stat, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { logger } from '@/ui/logger'
 import { configuration } from '@/configuration'
 import type { Update, UpdateMachineBody } from '@hapi/protocol'
-import type { RunnerState, Machine, MachineMetadata } from './types'
-import { RunnerStateSchema, MachineMetadataSchema } from './types'
+import type { ClaudeModelOption, RunnerState, Machine, MachineMetadata } from './types'
+import { ClaudeModelOptionSchema, RunnerStateSchema, MachineMetadataSchema } from './types'
 import { backoff } from '@/utils/time'
 import { getInvokedCwd } from '@/utils/invokedCwd'
+import { updateSettings } from '@/persistence'
 import { RpcHandlerManager } from './rpc/RpcHandlerManager'
 import { registerCommonHandlers } from '../modules/common/registerCommonHandlers'
 import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/rpcTypes'
 import { applyVersionedAck } from './versionedUpdate'
+
+const setMachineClaudeOptionsRequestSchema = z.object({
+    models: z.array(ClaudeModelOptionSchema).max(50)
+})
 
 interface ServerToRunnerEvents {
     update: (data: Update) => void
@@ -245,7 +251,47 @@ export class ApiMachineClient {
         })
     }
 
+    private registerMachineClaudeOptionsHandler(): void {
+        this.rpcHandlerManager.registerHandler('set-machine-claude-options', async (params: unknown) => {
+            const parsed = setMachineClaudeOptionsRequestSchema.safeParse(params)
+            if (!parsed.success) {
+                throw new Error('Invalid set-machine-claude-options payload')
+            }
+            const models: ClaudeModelOption[] = parsed.data.models
+
+            await updateSettings((current) => ({
+                ...current,
+                claude: {
+                    ...(current.claude ?? {}),
+                    models: models.length > 0 ? models : undefined
+                }
+            }))
+
+            await this.updateMachineMetadata((metadata) => ({
+                ...(metadata ?? this.buildFallbackMetadata()),
+                claudeModels: models.length > 0 ? models : undefined
+            }))
+
+            return { models }
+        })
+    }
+
+    private buildFallbackMetadata(): MachineMetadata {
+        // Only used when metadata was never populated (rare — registration
+        // always supplies it). Keeps required fields non-empty.
+        return {
+            host: 'unknown',
+            platform: 'unknown',
+            happyCliVersion: 'unknown',
+            homeDir: 'unknown',
+            happyHomeDir: configuration.happyHomeDir,
+            happyLibDir: 'unknown'
+        }
+    }
+
     setRPCHandlers({ spawnSession, stopSession, requestShutdown }: MachineRpcHandlers): void {
+        this.registerMachineClaudeOptionsHandler()
+
         this.rpcHandlerManager.registerHandler('spawn-happy-session', async (params: any) => {
             const { directory, sessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, effort, modelReasoningEffort, yolo, token, sessionType, worktreeName } = params || {}
 
