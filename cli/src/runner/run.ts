@@ -686,6 +686,15 @@ export async function startRunner(): Promise<void> {
     // Connect to server
     apiMachine.connect();
 
+    // Push the freshly-built metadata on every boot so edits to
+    // ~/.hapi/settings.json (e.g. claude.models) propagate to the hub
+    // even when the machine row already exists.
+    void apiMachine
+      .updateMachineMetadata(() => buildMachineMetadata())
+      .catch((error) => {
+        logger.debug('[RUNNER RUN] Failed to refresh machine metadata', error);
+      });
+
     reportSpawnOutcomeToHub = (outcome) => {
       void apiMachine.updateRunnerState((state: RunnerState | null) => {
         const baseState: RunnerState = state

@@ -28,6 +28,13 @@ export type SessionEffort = string | null
 
 export { AgentStateSchema, AttachmentMetadataSchema, MetadataSchema }
 
+export const ClaudeModelOptionSchema = z.object({
+    id: z.string().min(1),
+    label: z.string().min(1)
+})
+
+export type ClaudeModelOption = z.infer<typeof ClaudeModelOptionSchema>
+
 export const MachineMetadataSchema = z.object({
     host: z.string(),
     platform: z.string(),
@@ -35,7 +42,10 @@ export const MachineMetadataSchema = z.object({
     displayName: z.string().optional(),
     homeDir: z.string(),
     happyHomeDir: z.string(),
-    happyLibDir: z.string()
+    happyLibDir: z.string(),
+    // Per-machine Claude model picker options sourced from ~/.hapi/settings.json.
+    // Absent → web layer uses built-in defaults.
+    claudeModels: z.array(ClaudeModelOptionSchema).optional()
 })
 
 export type MachineMetadata = z.infer<typeof MachineMetadataSchema>

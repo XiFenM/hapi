@@ -10,6 +10,11 @@ import { existsSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { configuration } from '@/configuration'
 import { isProcessAlive } from '@/utils/process';
 
+export interface ClaudeModelOption {
+  id: string
+  label: string
+}
+
 interface Settings {
   // This ID is used as the actual database ID on the server
   // All machine operations use this ID
@@ -21,6 +26,11 @@ interface Settings {
   apiUrl?: string
   // Legacy field name (for migration, read-only)
   serverUrl?: string
+  // Per-machine Claude model picker options shown in the web UI.
+  // Absent → web falls back to built-in defaults.
+  claude?: {
+    models?: ClaudeModelOption[]
+  }
 }
 
 const defaultSettings: Settings = {}

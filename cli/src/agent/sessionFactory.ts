@@ -1,10 +1,12 @@
 import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 
 import { ApiClient } from '@/api/api'
 import type { ApiSessionClient } from '@/api/apiSession'
-import type { AgentState, MachineMetadata, Metadata, Session } from '@/api/types'
+import type { AgentState, ClaudeModelOption, MachineMetadata, Metadata, Session } from '@/api/types'
+import { ClaudeModelOptionSchema } from '@/api/types'
 import { notifyRunnerSessionStarted } from '@/runner/controlClient'
 import { readSettings } from '@/persistence'
 import { configuration } from '@/configuration'
@@ -37,6 +39,24 @@ export type SessionBootstrapResult = {
     workingDirectory: string
 }
 
+function readClaudeModelsFromSettings(): ClaudeModelOption[] | undefined {
+    try {
+        if (!existsSync(configuration.settingsFile)) return undefined
+        const raw = JSON.parse(readFileSync(configuration.settingsFile, 'utf8'))
+        const entries = raw?.claude?.models
+        if (!Array.isArray(entries)) return undefined
+        const parsed: ClaudeModelOption[] = []
+        for (const entry of entries) {
+            const result = ClaudeModelOptionSchema.safeParse(entry)
+            if (result.success) parsed.push(result.data)
+        }
+        return parsed.length > 0 ? parsed : undefined
+    } catch (error) {
+        logger.debug('[sessionFactory] Failed to read claude.models from settings', error)
+        return undefined
+    }
+}
+
 export function buildMachineMetadata(): MachineMetadata {
     return {
         host: process.env.HAPI_HOSTNAME || os.hostname(),
@@ -44,7 +64,8 @@ export function buildMachineMetadata(): MachineMetadata {
         happyCliVersion: packageJson.version,
         homeDir: os.homedir(),
         happyHomeDir: configuration.happyHomeDir,
-        happyLibDir: runtimePath()
+        happyLibDir: runtimePath(),
+        claudeModels: readClaudeModelsFromSettings()
     }
 }
 

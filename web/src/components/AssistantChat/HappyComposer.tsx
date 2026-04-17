@@ -51,6 +51,7 @@ export function HappyComposer(props: {
     contextSize?: number
     controlledByUser?: boolean
     agentFlavor?: string | null
+    claudeModels?: Array<{ id: string; label: string }> | null
     onCollaborationModeChange?: (mode: CodexCollaborationMode) => void
     onPermissionModeChange?: (mode: PermissionMode) => void
     onModelChange?: (model: string | null) => void
@@ -80,6 +81,7 @@ export function HappyComposer(props: {
         contextSize,
         controlledByUser = false,
         agentFlavor,
+        claudeModels,
         onCollaborationModeChange,
         onPermissionModeChange,
         onModelChange,
@@ -266,8 +268,8 @@ export function HappyComposer(props: {
         [agentFlavor]
     )
     const claudeModelOptions = useMemo(
-        () => getModelOptionsForFlavor(agentFlavor, model),
-        [agentFlavor, model]
+        () => getModelOptionsForFlavor(agentFlavor, model, claudeModels),
+        [agentFlavor, model, claudeModels]
     )
     const claudeEffortOptions = useMemo(
         () => getClaudeComposerEffortOptions(effort),
@@ -354,14 +356,14 @@ export function HappyComposer(props: {
         const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
             if (e.key === 'm' && (e.metaKey || e.ctrlKey) && onModelChange && supportsModelChange(agentFlavor)) {
                 e.preventDefault()
-                onModelChange(getNextModelForFlavor(agentFlavor, model))
+                onModelChange(getNextModelForFlavor(agentFlavor, model, claudeModels))
                 haptic('light')
             }
         }
 
         window.addEventListener('keydown', handleGlobalKeyDown)
         return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-    }, [model, onModelChange, haptic, agentFlavor])
+    }, [model, onModelChange, haptic, agentFlavor, claudeModels])
 
     const handleChange = useCallback((e: ReactChangeEvent<HTMLTextAreaElement>) => {
         const selection = {

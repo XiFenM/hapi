@@ -3,6 +3,13 @@ import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
 
+const claudeModelOptionSchema = z.object({
+    id: z.string().min(1),
+    label: z.string().min(1)
+})
+
+export type ClaudeModelOption = z.infer<typeof claudeModelOptionSchema>
+
 const machineMetadataSchema = z.object({
     host: z.string().optional(),
     platform: z.string().optional(),
@@ -10,7 +17,8 @@ const machineMetadataSchema = z.object({
     displayName: z.string().optional(),
     homeDir: z.string().optional(),
     happyHomeDir: z.string().optional(),
-    happyLibDir: z.string().optional()
+    happyLibDir: z.string().optional(),
+    claudeModels: z.array(claudeModelOptionSchema).optional()
 })
 
 export interface Machine {
@@ -29,6 +37,7 @@ export interface Machine {
         homeDir?: string
         happyHomeDir?: string
         happyLibDir?: string
+        claudeModels?: ClaudeModelOption[]
     } | null
     metadataVersion: number
     runnerState: unknown | null
@@ -101,7 +110,10 @@ export class MachineCache {
             const homeDir = typeof data.homeDir === 'string' ? data.homeDir : undefined
             const happyHomeDir = typeof data.happyHomeDir === 'string' ? data.happyHomeDir : undefined
             const happyLibDir = typeof data.happyLibDir === 'string' ? data.happyLibDir : undefined
-            return { host, platform, happyCliVersion, displayName, homeDir, happyHomeDir, happyLibDir }
+            const claudeModels = Array.isArray(data.claudeModels) && data.claudeModels.length > 0
+                ? data.claudeModels
+                : undefined
+            return { host, platform, happyCliVersion, displayName, homeDir, happyHomeDir, happyLibDir, claudeModels }
         })()
 
         const storedActiveAt = stored.activeAt ?? stored.createdAt

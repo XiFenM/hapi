@@ -1,6 +1,6 @@
 import { MODEL_OPTIONS } from '@/components/NewSession/types'
 import { getClaudeComposerModelOptions, getNextClaudeComposerModel } from './claudeModelOptions'
-import type { ClaudeComposerModelOption } from './claudeModelOptions'
+import type { ClaudeComposerModelOption, ClaudeComposerModelOverride } from './claudeModelOptions'
 
 export type ModelOption = ClaudeComposerModelOption
 
@@ -25,16 +25,24 @@ function getNextGeminiModel(currentModel?: string | null): string | null {
     return options[(currentIndex + 1) % options.length]?.value ?? null
 }
 
-export function getModelOptionsForFlavor(flavor: string | undefined | null, currentModel?: string | null): ModelOption[] {
+export function getModelOptionsForFlavor(
+    flavor: string | undefined | null,
+    currentModel?: string | null,
+    claudeOverrides?: ClaudeComposerModelOverride[] | null
+): ModelOption[] {
     if (flavor === 'gemini') {
         return getGeminiModelOptions(currentModel)
     }
-    return getClaudeComposerModelOptions(currentModel)
+    return getClaudeComposerModelOptions(currentModel, claudeOverrides)
 }
 
-export function getNextModelForFlavor(flavor: string | undefined | null, currentModel?: string | null): string | null {
+export function getNextModelForFlavor(
+    flavor: string | undefined | null,
+    currentModel?: string | null,
+    claudeOverrides?: ClaudeComposerModelOverride[] | null
+): string | null {
     if (flavor === 'gemini') {
         return getNextGeminiModel(currentModel)
     }
-    return getNextClaudeComposerModel(currentModel)
+    return getNextClaudeComposerModel(currentModel, claudeOverrides)
 }

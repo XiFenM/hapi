@@ -25,6 +25,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { SessionHeader } from '@/components/SessionHeader'
 import { TeamPanel } from '@/components/TeamPanel'
 import { usePlatform } from '@/hooks/usePlatform'
+import { useMachineClaudeOptions } from '@/hooks/useMachineClaudeOptions'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
@@ -61,6 +62,11 @@ export function SessionChat(props: {
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const agentFlavor = props.session.metadata?.flavor ?? null
+    const sessionMachineId = props.session.metadata?.machineId ?? null
+    const { models: machineClaudeModels } = useMachineClaudeOptions(
+        props.api,
+        agentFlavor === 'claude' ? sessionMachineId : null
+    )
     const controlledByUser = props.session.agentState?.controlledByUser === true
     const codexCollaborationModeSupported = agentFlavor === 'codex' && !controlledByUser
     const { abortSession, switchSession, setPermissionMode, setCollaborationMode, setModel, setEffort } = useSessionActions(
@@ -375,6 +381,7 @@ export function SessionChat(props: {
                         model={props.session.model}
                         effort={props.session.effort}
                         agentFlavor={agentFlavor}
+                        claudeModels={machineClaudeModels}
                         active={props.session.active}
                         allowSendWhenInactive
                         thinking={props.session.thinking}

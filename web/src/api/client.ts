@@ -370,6 +370,10 @@ export class ApiClient {
         return await this.request<MachinesResponse>('/api/machines')
     }
 
+    async getMachineClaudeOptions(machineId: string): Promise<{ models: Array<{ id: string; label: string }> | null }> {
+        return await this.request(`/api/machines/${encodeURIComponent(machineId)}/claude-options`)
+    }
+
     async checkMachinePathsExists(
         machineId: string,
         paths: string[]

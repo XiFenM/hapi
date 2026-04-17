@@ -74,6 +74,22 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         return c.json(result)
     })
 
+    app.get('/machines/:id/claude-options', (c) => {
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not connected' }, 503)
+        }
+
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) {
+            return machine
+        }
+
+        const models = machine.metadata?.claudeModels ?? null
+        return c.json({ models })
+    })
+
     app.post('/machines/:id/paths/exists', async (c) => {
         const engine = getSyncEngine()
         if (!engine) {
