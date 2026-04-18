@@ -180,11 +180,15 @@ export function reduceTimeline(
                             const child = reduceTimeline(sidechain, context)
                             hasReadyEvent = hasReadyEvent || child.hasReadyEvent
                             block.children = child.blocks
-                            // Propagate subagent tool ids up so the outer permission
-                            // reducer won't create an orphan permission-only card at
-                            // root level when a subagent request arrives before its
-                            // tool_use message is materialized.
+                            // Propagate resolved subagent tool ids up so the outer
+                            // permission reducer won't duplicate their cards at root.
+                            // Pending permissions are intentionally NOT propagated —
+                            // the outer reducer must surface a clickable root-level
+                            // orphan card for them, because the Task block that
+                            // contains the real card is collapsed by default and the
+                            // user would otherwise have no way to approve/deny.
                             for (const [id, childBlock] of child.toolBlocksById) {
+                                if (childBlock.tool.permission?.status === 'pending') continue
                                 if (!toolBlocksById.has(id)) {
                                     toolBlocksById.set(id, childBlock)
                                 }

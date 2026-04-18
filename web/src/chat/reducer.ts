@@ -55,8 +55,15 @@ export function reduceChatBlocks(
         : null
 
     for (const [id, entry] of permissionsById) {
-        if (toolIdsInMessages.has(id)) continue
-        if (rootResult.toolBlocksById.has(id)) continue
+        const isPending = entry.permission.status === 'pending'
+        // Pending permissions ALWAYS get a surfaced root-level card so the
+        // user can click approve/deny — even if the tool lives inside a
+        // (collapsed) Task sidechain. Resolved permissions attach to the
+        // existing tool card naturally and skip this orphan path.
+        if (!isPending) {
+            if (toolIdsInMessages.has(id)) continue
+            if (rootResult.toolBlocksById.has(id)) continue
+        }
 
         // Must be deterministic across renders — Date.now() would change
         // the block's createdAt every tick, breaking reconcile identity
