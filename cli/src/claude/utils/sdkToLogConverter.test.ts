@@ -243,6 +243,24 @@ describe('SDKToLogConverter', () => {
         })
     })
 
+    describe('rate_limit_event', () => {
+        it('drops rate_limit_event SDK messages so they never leak as raw JSON to the chat', () => {
+            const sdkMessage = {
+                type: 'rate_limit_event',
+                rate_limit_info: {
+                    status: 'allowed',
+                    resetsAt: 1776528000,
+                    rateLimitType: 'five_hour'
+                },
+                session_id: 'test-session'
+            } as unknown as SDKMessage
+
+            const logMessage = converter.convert(sdkMessage)
+
+            expect(logMessage).toBeNull()
+        })
+    })
+
     describe('Batch conversion', () => {
         it('should convert multiple messages maintaining relationships', () => {
             const messages: SDKMessage[] = [

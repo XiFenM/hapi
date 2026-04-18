@@ -215,6 +215,16 @@ export class SDKToLogConverter {
                 break
             }
 
+            case 'rate_limit_event' as any: {
+                // SDK telemetry that should never appear as raw JSON in the
+                // chat. The user-visible warning/reached banners are surfaced
+                // via assistant text chunks (handled by parseRateLimitText
+                // in AcpMessageHandler); this transcript channel just drops
+                // the noise.
+                logMessage = null
+                break
+            }
+
             default:
                 // Unknown message type - pass through with all fields
                 logMessage = {
