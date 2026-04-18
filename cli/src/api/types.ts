@@ -30,7 +30,10 @@ export { AgentStateSchema, AttachmentMetadataSchema, MetadataSchema }
 
 export const ClaudeModelOptionSchema = z.object({
     id: z.string().min(1),
-    label: z.string().min(1)
+    label: z.string().min(1),
+    // Optional per-model context window in tokens. When present, the web
+    // UI uses this instead of the hardcoded fallback in modelConfig.ts.
+    contextWindow: z.number().int().positive().optional()
 })
 
 export type ClaudeModelOption = z.infer<typeof ClaudeModelOptionSchema>
@@ -45,7 +48,8 @@ export const MachineMetadataSchema = z.object({
     happyLibDir: z.string(),
     // Per-machine Claude model picker options sourced from ~/.hapi/settings.json.
     // Absent → web layer uses built-in defaults.
-    claudeModels: z.array(ClaudeModelOptionSchema).optional()
+    claudeModels: z.array(ClaudeModelOptionSchema).optional(),
+    claudeDefaultContextWindow: z.number().int().positive().optional()
 })
 
 export type MachineMetadata = z.infer<typeof MachineMetadataSchema>

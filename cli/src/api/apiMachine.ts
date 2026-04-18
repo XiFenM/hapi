@@ -20,7 +20,8 @@ import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/
 import { applyVersionedAck } from './versionedUpdate'
 
 const setMachineClaudeOptionsRequestSchema = z.object({
-    models: z.array(ClaudeModelOptionSchema).max(50)
+    models: z.array(ClaudeModelOptionSchema).max(50),
+    defaultContextWindow: z.number().int().positive().max(10_000_000).optional()
 })
 
 interface ServerToRunnerEvents {
@@ -258,21 +259,24 @@ export class ApiMachineClient {
                 throw new Error('Invalid set-machine-claude-options payload')
             }
             const models: ClaudeModelOption[] = parsed.data.models
+            const defaultContextWindow = parsed.data.defaultContextWindow
 
             await updateSettings((current) => ({
                 ...current,
                 claude: {
                     ...(current.claude ?? {}),
-                    models: models.length > 0 ? models : undefined
+                    models: models.length > 0 ? models : undefined,
+                    defaultContextWindow: defaultContextWindow
                 }
             }))
 
             await this.updateMachineMetadata((metadata) => ({
                 ...(metadata ?? this.buildFallbackMetadata()),
-                claudeModels: models.length > 0 ? models : undefined
+                claudeModels: models.length > 0 ? models : undefined,
+                claudeDefaultContextWindow: defaultContextWindow
             }))
 
-            return { models }
+            return { models, defaultContextWindow: defaultContextWindow ?? null }
         })
     }
 

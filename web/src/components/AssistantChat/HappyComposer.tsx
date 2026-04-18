@@ -52,6 +52,7 @@ export function HappyComposer(props: {
     controlledByUser?: boolean
     agentFlavor?: string | null
     claudeModels?: Array<{ id: string; label: string }> | null
+    claudeContextWindowOverride?: number | null
     onEditClaudeModels?: () => void
     onCollaborationModeChange?: (mode: CodexCollaborationMode) => void
     onPermissionModeChange?: (mode: PermissionMode) => void
@@ -83,6 +84,7 @@ export function HappyComposer(props: {
         controlledByUser = false,
         agentFlavor,
         claudeModels,
+        claudeContextWindowOverride,
         onEditClaudeModels,
         onCollaborationModeChange,
         onPermissionModeChange,
@@ -692,6 +694,7 @@ export function HappyComposer(props: {
                         agentState={agentState}
                         contextSize={contextSize}
                         model={model}
+                        contextWindowOverride={claudeContextWindowOverride}
                         permissionMode={permissionMode}
                         collaborationMode={collaborationMode}
                         agentFlavor={agentFlavor}

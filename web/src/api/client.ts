@@ -370,17 +370,24 @@ export class ApiClient {
         return await this.request<MachinesResponse>('/api/machines')
     }
 
-    async getMachineClaudeOptions(machineId: string): Promise<{ models: Array<{ id: string; label: string }> | null }> {
+    async getMachineClaudeOptions(machineId: string): Promise<{
+        models: Array<{ id: string; label: string; contextWindow?: number }> | null
+        defaultContextWindow?: number | null
+    }> {
         return await this.request(`/api/machines/${encodeURIComponent(machineId)}/claude-options`)
     }
 
     async setMachineClaudeOptions(
         machineId: string,
-        models: Array<{ id: string; label: string }>
-    ): Promise<{ models: Array<{ id: string; label: string }> }> {
+        models: Array<{ id: string; label: string; contextWindow?: number }>,
+        defaultContextWindow?: number
+    ): Promise<{
+        models: Array<{ id: string; label: string; contextWindow?: number }>
+        defaultContextWindow?: number | null
+    }> {
         return await this.request(`/api/machines/${encodeURIComponent(machineId)}/claude-options`, {
             method: 'PUT',
-            body: JSON.stringify({ models })
+            body: JSON.stringify({ models, defaultContextWindow })
         })
     }
 

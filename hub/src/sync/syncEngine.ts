@@ -317,9 +317,17 @@ export class SyncEngine {
 
     async applyMachineClaudeOptions(
         machineId: string,
-        models: Array<{ id: string; label: string }>
-    ): Promise<Array<{ id: string; label: string }>> {
-        const result = await this.rpcGateway.requestMachineClaudeOptions(machineId, models)
+        models: Array<{ id: string; label: string; contextWindow?: number }>,
+        defaultContextWindow?: number
+    ): Promise<{
+        models: Array<{ id: string; label: string; contextWindow?: number }>
+        defaultContextWindow: number | null
+    }> {
+        const result = await this.rpcGateway.requestMachineClaudeOptions(
+            machineId,
+            models,
+            defaultContextWindow
+        )
         if (!result || typeof result !== 'object') {
             throw new Error('Invalid response from machine claude options RPC')
         }
@@ -327,10 +335,14 @@ export class SyncEngine {
         if (!Array.isArray(applied)) {
             throw new Error('Missing applied machine claude options')
         }
+        const appliedDefault = (result as { defaultContextWindow?: unknown }).defaultContextWindow
         // Refresh the cached machine so subsequent GETs return the new value
         // without waiting for the runner's metadata-update broadcast.
         this.machineCache.refreshMachine(machineId)
-        return applied as Array<{ id: string; label: string }>
+        return {
+            models: applied as Array<{ id: string; label: string; contextWindow?: number }>,
+            defaultContextWindow: typeof appliedDefault === 'number' ? appliedDefault : null
+        }
     }
 
     async spawnSession(

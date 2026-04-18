@@ -64,11 +64,24 @@ export function SessionChat(props: {
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const agentFlavor = props.session.metadata?.flavor ?? null
     const sessionMachineId = props.session.metadata?.machineId ?? null
-    const { models: machineClaudeModels, save: saveMachineClaudeModels } = useMachineClaudeOptions(
+    const {
+        models: machineClaudeModels,
+        defaultContextWindow: machineClaudeDefaultContextWindow,
+        save: saveMachineClaudeModels
+    } = useMachineClaudeOptions(
         props.api,
         agentFlavor === 'claude' ? sessionMachineId : null
     )
     const [isEditClaudeModelsOpen, setIsEditClaudeModelsOpen] = useState(false)
+    const claudeContextWindowOverride = useMemo(() => {
+        if (agentFlavor !== 'claude') return null
+        const selectedModel = props.session.model
+        if (!selectedModel) {
+            return machineClaudeDefaultContextWindow ?? null
+        }
+        const match = machineClaudeModels?.find((m) => m.id === selectedModel)
+        return match?.contextWindow ?? null
+    }, [agentFlavor, props.session.model, machineClaudeModels, machineClaudeDefaultContextWindow])
     const controlledByUser = props.session.agentState?.controlledByUser === true
     const codexCollaborationModeSupported = agentFlavor === 'codex' && !controlledByUser
     const { abortSession, switchSession, setPermissionMode, setCollaborationMode, setModel, setEffort } = useSessionActions(
@@ -384,6 +397,7 @@ export function SessionChat(props: {
                         effort={props.session.effort}
                         agentFlavor={agentFlavor}
                         claudeModels={machineClaudeModels}
+                        claudeContextWindowOverride={claudeContextWindowOverride}
                         onEditClaudeModels={
                             agentFlavor === 'claude' && sessionMachineId
                                 ? () => setIsEditClaudeModelsOpen(true)
@@ -428,6 +442,7 @@ export function SessionChat(props: {
                 isOpen={isEditClaudeModelsOpen}
                 onClose={() => setIsEditClaudeModelsOpen(false)}
                 initialModels={machineClaudeModels}
+                initialDefaultContextWindow={machineClaudeDefaultContextWindow}
                 onSave={saveMachineClaudeModels}
             />
         </div>

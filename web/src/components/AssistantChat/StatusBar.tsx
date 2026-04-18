@@ -112,6 +112,12 @@ export function StatusBar(props: {
     agentState: AgentState | null | undefined
     contextSize?: number
     model?: string | null
+    /**
+     * Machine-configured context window (tokens) for the selected model
+     * (or for "Auto" when model is null). When present, overrides the
+     * hardcoded fallback in modelConfig.ts.
+     */
+    contextWindowOverride?: number | null
     permissionMode?: PermissionMode
     collaborationMode?: CodexCollaborationMode
     agentFlavor?: string | null
@@ -126,11 +132,14 @@ export function StatusBar(props: {
     const contextWarning = useMemo(
         () => {
             if (props.contextSize === undefined) return null
-            const maxContextSize = getContextBudgetTokens(props.model, props.agentFlavor)
+            const maxContextSize = props.contextWindowOverride
+                && props.contextWindowOverride > 0
+                    ? props.contextWindowOverride
+                    : getContextBudgetTokens(props.model, props.agentFlavor)
             if (!maxContextSize) return null
             return getContextWarning(props.contextSize, maxContextSize, t)
         },
-        [props.contextSize, props.model, props.agentFlavor, t]
+        [props.contextSize, props.model, props.agentFlavor, props.contextWindowOverride, t]
     )
 
     const permissionMode = props.permissionMode

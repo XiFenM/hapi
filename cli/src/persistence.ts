@@ -13,6 +13,7 @@ import { isProcessAlive } from '@/utils/process';
 export interface ClaudeModelOption {
   id: string
   label: string
+  contextWindow?: number
 }
 
 interface Settings {
@@ -30,6 +31,10 @@ interface Settings {
   // Absent → web falls back to built-in defaults.
   claude?: {
     models?: ClaudeModelOption[]
+    // Context window (tokens) for the "Auto" / default selection, used by
+    // the web status bar when no explicit model is set. Absent → hardcoded
+    // fallback in modelConfig.ts.
+    defaultContextWindow?: number
   }
 }
 

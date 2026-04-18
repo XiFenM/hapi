@@ -1,23 +1,31 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 
-export type MachineClaudeModelOption = { id: string; label: string }
+export type MachineClaudeModelOption = { id: string; label: string; contextWindow?: number }
+
+type SavePayload = {
+    models: MachineClaudeModelOption[]
+    defaultContextWindow?: number | null
+}
 
 export function useMachineClaudeOptions(
     api: ApiClient,
     machineId: string | null | undefined
 ): {
     models: MachineClaudeModelOption[] | null
+    defaultContextWindow: number | null
     loading: boolean
     refresh: () => Promise<void>
-    save: (models: MachineClaudeModelOption[]) => Promise<MachineClaudeModelOption[]>
+    save: (payload: SavePayload) => Promise<void>
 } {
     const [models, setModels] = useState<MachineClaudeModelOption[] | null>(null)
+    const [defaultContextWindow, setDefaultContextWindow] = useState<number | null>(null)
     const [loading, setLoading] = useState(false)
 
     const fetchOnce = useCallback(async (signal?: { cancelled: boolean }) => {
         if (!machineId) {
             setModels(null)
+            setDefaultContextWindow(null)
             setLoading(false)
             return
         }
@@ -26,9 +34,15 @@ export function useMachineClaudeOptions(
             const result = await api.getMachineClaudeOptions(machineId)
             if (signal?.cancelled) return
             setModels(result.models ?? null)
+            setDefaultContextWindow(
+                typeof (result as { defaultContextWindow?: unknown }).defaultContextWindow === 'number'
+                    ? ((result as { defaultContextWindow: number }).defaultContextWindow)
+                    : null
+            )
         } catch {
             if (signal?.cancelled) return
             setModels(null)
+            setDefaultContextWindow(null)
         } finally {
             if (!signal?.cancelled) setLoading(false)
         }
@@ -46,14 +60,19 @@ export function useMachineClaudeOptions(
         await fetchOnce()
     }, [fetchOnce])
 
-    const save = useCallback(async (next: MachineClaudeModelOption[]) => {
+    const save = useCallback(async (payload: SavePayload) => {
         if (!machineId) {
             throw new Error('No machine selected')
         }
-        const result = await api.setMachineClaudeOptions(machineId, next)
+        const def = typeof payload.defaultContextWindow === 'number' && payload.defaultContextWindow > 0
+            ? payload.defaultContextWindow
+            : undefined
+        const result = await api.setMachineClaudeOptions(machineId, payload.models, def)
         setModels(result.models ?? null)
-        return result.models ?? []
+        setDefaultContextWindow(
+            typeof result.defaultContextWindow === 'number' ? result.defaultContextWindow : null
+        )
     }, [api, machineId])
 
-    return { models, loading, refresh, save }
+    return { models, defaultContextWindow, loading, refresh, save }
 }

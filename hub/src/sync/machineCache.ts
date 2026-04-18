@@ -5,7 +5,8 @@ import { EventPublisher } from './eventPublisher'
 
 const claudeModelOptionSchema = z.object({
     id: z.string().min(1),
-    label: z.string().min(1)
+    label: z.string().min(1),
+    contextWindow: z.number().int().positive().optional()
 })
 
 export type ClaudeModelOption = z.infer<typeof claudeModelOptionSchema>
@@ -18,7 +19,8 @@ const machineMetadataSchema = z.object({
     homeDir: z.string().optional(),
     happyHomeDir: z.string().optional(),
     happyLibDir: z.string().optional(),
-    claudeModels: z.array(claudeModelOptionSchema).optional()
+    claudeModels: z.array(claudeModelOptionSchema).optional(),
+    claudeDefaultContextWindow: z.number().int().positive().optional()
 })
 
 export interface Machine {
@@ -38,6 +40,7 @@ export interface Machine {
         happyHomeDir?: string
         happyLibDir?: string
         claudeModels?: ClaudeModelOption[]
+        claudeDefaultContextWindow?: number
     } | null
     metadataVersion: number
     runnerState: unknown | null
@@ -113,7 +116,10 @@ export class MachineCache {
             const claudeModels = Array.isArray(data.claudeModels) && data.claudeModels.length > 0
                 ? data.claudeModels
                 : undefined
-            return { host, platform, happyCliVersion, displayName, homeDir, happyHomeDir, happyLibDir, claudeModels }
+            const claudeDefaultContextWindow = typeof data.claudeDefaultContextWindow === 'number'
+                ? data.claudeDefaultContextWindow
+                : undefined
+            return { host, platform, happyCliVersion, displayName, homeDir, happyHomeDir, happyLibDir, claudeModels, claudeDefaultContextWindow }
         })()
 
         const storedActiveAt = stored.activeAt ?? stored.createdAt

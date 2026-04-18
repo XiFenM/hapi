@@ -39,25 +39,42 @@ export type SessionBootstrapResult = {
     workingDirectory: string
 }
 
-function readClaudeModelsFromSettings(): ClaudeModelOption[] | undefined {
+function readClaudeConfigFromSettings(): {
+    models?: ClaudeModelOption[]
+    defaultContextWindow?: number
+} {
     try {
-        if (!existsSync(configuration.settingsFile)) return undefined
+        if (!existsSync(configuration.settingsFile)) return {}
         const raw = JSON.parse(readFileSync(configuration.settingsFile, 'utf8'))
-        const entries = raw?.claude?.models
-        if (!Array.isArray(entries)) return undefined
-        const parsed: ClaudeModelOption[] = []
-        for (const entry of entries) {
-            const result = ClaudeModelOptionSchema.safeParse(entry)
-            if (result.success) parsed.push(result.data)
+        const claude = raw?.claude
+        if (!claude || typeof claude !== 'object') return {}
+
+        const out: { models?: ClaudeModelOption[]; defaultContextWindow?: number } = {}
+
+        if (Array.isArray(claude.models)) {
+            const parsed: ClaudeModelOption[] = []
+            for (const entry of claude.models) {
+                const result = ClaudeModelOptionSchema.safeParse(entry)
+                if (result.success) parsed.push(result.data)
+            }
+            if (parsed.length > 0) out.models = parsed
         }
-        return parsed.length > 0 ? parsed : undefined
+
+        if (typeof claude.defaultContextWindow === 'number'
+            && Number.isFinite(claude.defaultContextWindow)
+            && claude.defaultContextWindow > 0) {
+            out.defaultContextWindow = Math.round(claude.defaultContextWindow)
+        }
+
+        return out
     } catch (error) {
-        logger.debug('[sessionFactory] Failed to read claude.models from settings', error)
-        return undefined
+        logger.debug('[sessionFactory] Failed to read claude config from settings', error)
+        return {}
     }
 }
 
 export function buildMachineMetadata(): MachineMetadata {
+    const claude = readClaudeConfigFromSettings()
     return {
         host: process.env.HAPI_HOSTNAME || os.hostname(),
         platform: os.platform(),
@@ -65,7 +82,8 @@ export function buildMachineMetadata(): MachineMetadata {
         homeDir: os.homedir(),
         happyHomeDir: configuration.happyHomeDir,
         happyLibDir: runtimePath(),
-        claudeModels: readClaudeModelsFromSettings()
+        claudeModels: claude.models,
+        claudeDefaultContextWindow: claude.defaultContextWindow
     }
 }
 
