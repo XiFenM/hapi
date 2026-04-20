@@ -331,7 +331,7 @@ export function query(config: {
     if (customSystemPrompt) args.push('--system-prompt', stripNewlinesForWindowsShellArg(customSystemPrompt))
     if (appendSystemPrompt) args.push('--append-system-prompt', stripNewlinesForWindowsShellArg(appendSystemPrompt))
     if (maxTurns) args.push('--max-turns', maxTurns.toString())
-    if (model) args.push('--model', model)
+    args.push('--model', model ?? 'default')
     if (effort) args.push('--effort', effort)
     if (canCallTool) {
         if (typeof prompt === 'string') {
