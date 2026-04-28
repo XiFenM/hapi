@@ -144,6 +144,14 @@ export function findActiveWord(
     if (activeWordPart.length > 0) {
         const firstChar = activeWordPart.charAt(0)
         if (prefixes.includes(firstChar)) {
+            // Slash commands and skill names are single tokens — once a space
+            // appears between the prefix and the cursor, the user is typing
+            // arguments, not still completing the command name. Hide suggestions
+            // so Enter sends the message instead of replacing the args.
+            // `@` keeps the legacy behavior (file paths/usernames may contain spaces).
+            if (firstChar !== '@' && activeWordPart.includes(' ')) {
+                return undefined
+            }
             // Find where the word ends after the cursor
             // Pass the start position to help determine if this is a file path
             const endIndex = findActiveWordEnd(content, selection.end, startIndex)
