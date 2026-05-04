@@ -11,7 +11,7 @@ import type {
     SyncEvent
 } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
-import { clearMessageWindow, ingestIncomingMessages } from '@/lib/message-window-store'
+import { clearMessageWindow, getMessageWindowState, ingestIncomingMessages, markMessagesConsumed, updateMessageStatus } from '@/lib/message-window-store'
 
 type SSESubscription = {
     all?: boolean
@@ -30,7 +30,7 @@ const RECONNECT_MAX_DELAY_MS = 30_000
 const RECONNECT_JITTER_MS = 500
 const INVALIDATION_BATCH_MS = 16
 
-type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'model' | 'effort' | 'permissionMode' | 'collaborationMode'>>
+type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'model' | 'modelReasoningEffort' | 'effort' | 'permissionMode' | 'collaborationMode'>>
 
 function sortSessionSummaries(left: SessionSummary, right: SessionSummary): number {
     if (left.active !== right.active) {
@@ -85,6 +85,10 @@ function getSessionPatch(value: unknown): SessionPatch | null {
         patch.model = value.model
         hasKnownPatch = true
     }
+    if (value.modelReasoningEffort === null || typeof value.modelReasoningEffort === 'string') {
+        patch.modelReasoningEffort = value.modelReasoningEffort
+        hasKnownPatch = true
+    }
     if (value.effort === null || typeof value.effort === 'string') {
         patch.effort = value.effort
         hasKnownPatch = true
@@ -105,7 +109,7 @@ function hasUnknownSessionPatchKeys(value: unknown): boolean {
     if (!hasRecordShape(value)) {
         return false
     }
-    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'model', 'effort', 'permissionMode', 'collaborationMode'])
+    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'model', 'modelReasoningEffort', 'effort', 'permissionMode', 'collaborationMode'])
     return Object.keys(value).some((key) => !knownKeys.has(key))
 }
 
@@ -493,6 +497,10 @@ export function useSSE(options: {
                 return
             }
 
+            if (event.type === 'messages-consumed') {
+                markMessagesConsumed(event.sessionId, event.localIds, event.invokedAt)
+            }
+
             if (event.type === 'message-received') {
                 ingestIncomingMessages(event.sessionId, [event.message])
             }
@@ -596,8 +604,22 @@ export function useSSE(options: {
             requestReconnect('heartbeat-timeout')
         }, HEARTBEAT_WATCHDOG_INTERVAL_MS)
 
+        // When the tab becomes visible again, check immediately whether the
+        // SSE connection went stale while hidden (the watchdog skips checks
+        // for hidden tabs).  This avoids the user having to wait up to
+        // HEARTBEAT_WATCHDOG_INTERVAL_MS after switching back.
+        const onVisibilityChange = () => {
+            if (getVisibilityState() !== 'visible') return
+            if (eventSourceRef.current !== eventSource) return
+            if (Date.now() - lastActivityAtRef.current >= HEARTBEAT_STALE_MS) {
+                requestReconnect('visibility-recovery')
+            }
+        }
+        document.addEventListener('visibilitychange', onVisibilityChange)
+
         return () => {
             clearInterval(watchdogTimer)
+            document.removeEventListener('visibilitychange', onVisibilityChange)
             if (invalidationTimerRef.current) {
                 clearTimeout(invalidationTimerRef.current)
                 invalidationTimerRef.current = null

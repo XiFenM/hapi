@@ -20,7 +20,8 @@ const machineMetadataSchema = z.object({
     happyHomeDir: z.string().optional(),
     happyLibDir: z.string().optional(),
     claudeModels: z.array(claudeModelOptionSchema).optional(),
-    claudeDefaultContextWindow: z.number().int().positive().optional()
+    claudeDefaultContextWindow: z.number().int().positive().optional(),
+    workspaceRoot: z.string().optional()
 })
 
 export interface Machine {
@@ -41,6 +42,7 @@ export interface Machine {
         happyLibDir?: string
         claudeModels?: ClaudeModelOption[]
         claudeDefaultContextWindow?: number
+        workspaceRoot?: string
     } | null
     metadataVersion: number
     runnerState: unknown | null
@@ -119,7 +121,8 @@ export class MachineCache {
             const claudeDefaultContextWindow = typeof data.claudeDefaultContextWindow === 'number'
                 ? data.claudeDefaultContextWindow
                 : undefined
-            return { host, platform, happyCliVersion, displayName, homeDir, happyHomeDir, happyLibDir, claudeModels, claudeDefaultContextWindow }
+            const workspaceRoot = typeof data.workspaceRoot === 'string' ? data.workspaceRoot : undefined
+            return { host, platform, happyCliVersion, displayName, homeDir, happyHomeDir, happyLibDir, claudeModels, claudeDefaultContextWindow, workspaceRoot }
         })()
 
         const storedActiveAt = stored.activeAt ?? stored.createdAt

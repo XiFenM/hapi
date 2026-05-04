@@ -83,6 +83,7 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         return c.json(result)
     })
 
+    // Fork: claude-options (read/write per-machine model list)
     app.get('/machines/:id/claude-options', (c) => {
         const engine = getSyncEngine()
         if (!engine) {
@@ -131,6 +132,33 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
     })
 
+    // Upstream: workspace-scoped directory listing (--workspace-root opt-in)
+    app.post('/machines/:id/list-directory', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not connected' }, 503)
+        }
+
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) {
+            return machine
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = z.object({ path: z.string().min(1) }).safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        try {
+            const result = await engine.listWorkspaceDirectory(machineId, parsed.data.path)
+            return c.json(result)
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Failed to list directory' }, 500)
+        }
+    })
+
     app.post('/machines/:id/paths/exists', async (c) => {
         const engine = getSyncEngine()
         if (!engine) {
@@ -162,6 +190,7 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
     })
 
+    // Fork: machine-scope directory listing (no workspace restriction)
     app.get('/machines/:id/directory', async (c) => {
         const engine = getSyncEngine()
         if (!engine) {
@@ -190,6 +219,7 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
     })
 
+    // Fork: machine-scope file read (chunked for large files)
     app.get('/machines/:id/file', async (c) => {
         const engine = getSyncEngine()
         if (!engine) {
@@ -214,6 +244,58 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return c.json({
                 success: false,
                 error: error instanceof Error ? error.message : 'Failed to read file'
+            }, 500)
+        }
+    })
+
+    // Upstream: codex / opencode model discovery
+    app.get('/machines/:id/codex-models', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ success: false, error: 'Not connected' }, 503)
+        }
+
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) {
+            return machine
+        }
+
+        try {
+            const result = await engine.listCodexModelsForMachine(machineId)
+            return c.json(result)
+        } catch (error) {
+            return c.json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to list Codex models'
+            }, 500)
+        }
+    })
+
+    app.get('/machines/:id/opencode-models', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ success: false, error: 'Not connected' }, 503)
+        }
+
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) {
+            return machine
+        }
+
+        const cwd = (c.req.query('cwd') ?? '').trim()
+        if (!cwd) {
+            return c.json({ success: false, error: 'cwd query parameter is required' }, 400)
+        }
+
+        try {
+            const result = await engine.listOpencodeModelsForCwd(machineId, cwd)
+            return c.json(result)
+        } catch (error) {
+            return c.json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to list OpenCode models'
             }, 500)
         }
     })
