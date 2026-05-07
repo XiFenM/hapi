@@ -25,7 +25,7 @@ export function getClaudeComposerModelOptions(
 ): ClaudeComposerModelOption[] {
     const normalizedCurrentModel = normalizeClaudeComposerModel(currentModel)
     const options: ClaudeComposerModelOption[] = [
-        { value: null, label: 'Auto' }
+        { value: null, label: 'Default' }
     ]
 
     // Machine-level override list takes precedence over built-in presets.

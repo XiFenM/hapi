@@ -3,8 +3,9 @@
  */
 
 import { io, type Socket } from 'socket.io-client'
-import { stat, readdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readdir, readFile, realpath, stat } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { z } from 'zod'
 import { logger } from '@/ui/logger'
 import { configuration } from '@/configuration'
@@ -16,8 +17,14 @@ import { getInvokedCwd } from '@/utils/invokedCwd'
 import { updateSettings } from '@/persistence'
 import { RpcHandlerManager } from './rpc/RpcHandlerManager'
 import { registerCommonHandlers } from '../modules/common/registerCommonHandlers'
+import {
+    listOpencodeModelsForCwd,
+    type ListOpencodeModelsForCwdRequest,
+    type ListOpencodeModelsForCwdResponse
+} from '../modules/common/opencodeModels'
 import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/rpcTypes'
 import { applyVersionedAck } from './versionedUpdate'
+import { buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
 
 const setMachineClaudeOptionsRequestSchema = z.object({
     models: z.array(ClaudeModelOptionSchema).max(50),
@@ -72,6 +79,7 @@ interface PathExistsResponse {
     exists: Record<string, boolean>
 }
 
+// Fork: machine-scope file APIs (no validatePath restriction)
 interface MachineListDirectoryRequest {
     path: string
 }
@@ -122,15 +130,51 @@ interface MachineFileStatResponse {
     error?: string
 }
 
+// Upstream: workspace-scoped browser (with --workspace-root opt-in)
+interface ListMachineDirectoryRequest {
+    path: string
+}
+
+interface ListMachineDirectoryEntry {
+    name: string
+    type: 'file' | 'directory' | 'other'
+    size?: number
+    modified?: number
+    isGitRepo?: boolean
+}
+
+interface ListMachineDirectoryResponse {
+    success: boolean
+    entries?: ListMachineDirectoryEntry[]
+    error?: string
+}
+
 export class ApiMachineClient {
     private socket!: Socket<ServerToRunnerEvents, RunnerToServerEvents>
     private keepAliveInterval: NodeJS.Timeout | null = null
     private rpcHandlerManager: RpcHandlerManager
 
+    private readonly normalizedWorkspaceRoot: string | undefined
+
     constructor(
         private readonly token: string,
-        private readonly machine: Machine
+        private readonly machine: Machine,
+        private readonly workspaceRoot?: string
     ) {
+        // realpath the root once so all subsequent comparisons are against
+        // the canonical, symlink-resolved path. Falls back to a lexical
+        // resolve if realpath fails (e.g. unusual permission setup) so we
+        // still get *some* protection rather than skipping the check.
+        if (workspaceRoot) {
+            try {
+                this.normalizedWorkspaceRoot = realpathSync(workspaceRoot)
+            } catch {
+                this.normalizedWorkspaceRoot = resolvePath(workspaceRoot)
+            }
+        } else {
+            this.normalizedWorkspaceRoot = undefined
+        }
+
         this.rpcHandlerManager = new RpcHandlerManager({
             scopePrefix: this.machine.id,
             logger: (msg, data) => logger.debug(msg, data)
@@ -157,6 +201,7 @@ export class ApiMachineClient {
             return { exists }
         })
 
+        // Fork: machine-scope directory listing (no workspace restriction)
         this.rpcHandlerManager.registerHandler<MachineListDirectoryRequest, MachineListDirectoryResponse>('machine-list-directory', async (params) => {
             const targetPath = (params?.path || '').trim()
             if (!targetPath) {
@@ -204,6 +249,78 @@ export class ApiMachineClient {
             }
         })
 
+        // Upstream: workspace-scoped directory listing (--workspace-root opt-in)
+        this.rpcHandlerManager.registerHandler<ListMachineDirectoryRequest, ListMachineDirectoryResponse>('list-directory', async (params) => {
+            if (!this.normalizedWorkspaceRoot) {
+                return { success: false, error: 'Workspace browsing is not enabled for this machine' }
+            }
+
+            const rawPath = typeof params?.path === 'string' ? params.path.trim() : ''
+            if (!rawPath) {
+                return { success: false, error: 'Path is required' }
+            }
+
+            const targetPath = await this.resolveForWorkspaceCheck(rawPath)
+            if (!this.isWithinWorkspaceRoot(targetPath)) {
+                return { success: false, error: 'Path is outside workspace root' }
+            }
+
+            try {
+                const dirStat = await stat(targetPath)
+                if (!dirStat.isDirectory()) {
+                    return { success: false, error: 'Path is not a directory' }
+                }
+
+                const dirEntries = await readdir(targetPath, { withFileTypes: true })
+                const entries: ListMachineDirectoryEntry[] = []
+
+                await Promise.all(dirEntries.map(async (entry) => {
+                    if (entry.name.startsWith('.')) return
+
+                    const fullPath = join(targetPath, entry.name)
+                    let type: 'file' | 'directory' | 'other' = 'other'
+                    let size: number | undefined
+                    let modified: number | undefined
+                    let isGitRepo = false
+
+                    if (entry.isDirectory()) {
+                        type = 'directory'
+                        try {
+                            const gitStat = await stat(join(fullPath, '.git'))
+                            isGitRepo = gitStat.isDirectory() || gitStat.isFile()
+                        } catch {
+                            // not a git repo
+                        }
+                    } else if (entry.isFile()) {
+                        type = 'file'
+                    }
+
+                    if (!entry.isSymbolicLink()) {
+                        try {
+                            const stats = await stat(fullPath)
+                            size = stats.size
+                            modified = stats.mtime.getTime()
+                        } catch {
+                            // ignore stat errors
+                        }
+                    }
+
+                    entries.push({ name: entry.name, type, size, modified, isGitRepo })
+                }))
+
+                entries.sort((a, b) => {
+                    if (a.type === 'directory' && b.type !== 'directory') return -1
+                    if (a.type !== 'directory' && b.type === 'directory') return 1
+                    return a.name.localeCompare(b.name)
+                })
+
+                return { success: true, entries }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Failed to list directory' }
+            }
+        })
+
+        // Fork: machine-scope file read/stat/chunk
         this.rpcHandlerManager.registerHandler<MachineReadFileRequest, MachineReadFileResponse>('machine-read-file', async (params) => {
             const targetPath = (params?.path || '').trim()
             if (!targetPath) {
@@ -250,6 +367,31 @@ export class ApiMachineClient {
                 return { success: false, error: error instanceof Error ? error.message : 'Failed to read file chunk' }
             }
         })
+
+        // Upstream: workspace-scoped re-registration of OpenCode model discovery.
+        // OpenCode model discovery spawns an `opencode acp` subprocess scoped to the
+        // requested cwd, so it must obey the same workspace-root containment as
+        // `list-directory` and `spawn-happy-session`. Re-register the handler that
+        // `registerCommonHandlers` installed unguarded with a guarded version that
+        // resolves symlinks and rejects paths outside the configured root before
+        // delegating to the lower-level probe. This intentionally overwrites the
+        // earlier registration on the same scoped method name.
+        this.rpcHandlerManager.registerHandler<ListOpencodeModelsForCwdRequest, ListOpencodeModelsForCwdResponse>(
+            'listOpencodeModelsForCwd',
+            async (params) => {
+                const rawCwd = typeof params?.cwd === 'string' ? params.cwd.trim() : ''
+                if (!rawCwd) {
+                    return { success: false, error: 'cwd is required' }
+                }
+
+                const resolvedCwd = await this.resolveForWorkspaceCheck(rawCwd)
+                if (!this.isWithinWorkspaceRoot(resolvedCwd)) {
+                    return { success: false, error: 'Path is outside workspace root' }
+                }
+
+                return await listOpencodeModelsForCwd(resolvedCwd)
+            }
+        )
     }
 
     private registerMachineClaudeOptionsHandler(): void {
@@ -293,14 +435,56 @@ export class ApiMachineClient {
         }
     }
 
+    private isWithinWorkspaceRoot(absolutePath: string): boolean {
+        if (!this.normalizedWorkspaceRoot) return true
+        const rel = relative(this.normalizedWorkspaceRoot, absolutePath)
+        return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+    }
+
+    /**
+     * Canonicalize a path for workspace-root containment checks. Resolves
+     * symlinks via realpath so a symlink such as `/safe/out -> /etc` cannot
+     * be used to escape the configured root with a lexical-only check.
+     *
+     * If the path doesn't exist (e.g. a session is being spawned in a
+     * directory we'll create), walks up to the nearest existing ancestor
+     * and realpaths *that*, joining the missing tail back on. This way the
+     * check still runs against the real on-disk location once any
+     * intermediate symlink in the parent chain has been resolved.
+     */
+    private async resolveForWorkspaceCheck(path: string): Promise<string> {
+        const absolute = resolvePath(path)
+        try {
+            return await realpath(absolute)
+        } catch {
+            const missing: string[] = []
+            let cursor = absolute
+            while (cursor !== dirname(cursor)) {
+                missing.unshift(basename(cursor))
+                cursor = dirname(cursor)
+                try {
+                    return join(await realpath(cursor), ...missing)
+                } catch {
+                    // keep walking to the nearest existing parent
+                }
+            }
+            return absolute
+        }
+    }
+
     setRPCHandlers({ spawnSession, stopSession, requestShutdown }: MachineRpcHandlers): void {
         this.registerMachineClaudeOptionsHandler()
 
         this.rpcHandlerManager.registerHandler('spawn-happy-session', async (params: any) => {
-            const { directory, sessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, effort, modelReasoningEffort, yolo, token, sessionType, worktreeName } = params || {}
+            const { directory, sessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, effort, modelReasoningEffort, yolo, permissionMode, token, sessionType, worktreeName } = params || {}
 
             if (!directory) {
                 throw new Error('Directory is required')
+            }
+
+            const resolvedDirectory = await this.resolveForWorkspaceCheck(directory)
+            if (!this.isWithinWorkspaceRoot(resolvedDirectory)) {
+                return { type: 'error', errorMessage: 'Directory is outside this machine\'s workspace root' }
             }
 
             const result = await spawnSession({
@@ -314,6 +498,7 @@ export class ApiMachineClient {
                 effort,
                 modelReasoningEffort,
                 yolo,
+                permissionMode,
                 token,
                 sessionType,
                 worktreeName
@@ -426,7 +611,8 @@ export class ApiMachineClient {
             path: '/socket.io/',
             reconnection: true,
             reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000
+            reconnectionDelayMax: 5000,
+            ...buildSocketIoExtraHeaderOptions()
         })
 
         this.socket.on('connect', () => {
@@ -441,6 +627,34 @@ export class ApiMachineClient {
             })).catch((error) => {
                 logger.debug('[API MACHINE] Failed to update runner state on connect', error)
             })
+
+            const hubWorkspaceRoot = this.machine.metadata?.workspaceRoot
+            const desiredWorkspaceRoot = this.workspaceRoot
+            if (desiredWorkspaceRoot !== hubWorkspaceRoot) {
+                if (desiredWorkspaceRoot) {
+                    console.log(`[HAPI] Syncing workspace root to hub: ${desiredWorkspaceRoot} (current hub value: ${hubWorkspaceRoot ?? 'none'})`)
+                } else {
+                    console.log(`[HAPI] Clearing workspace root on hub (was: ${hubWorkspaceRoot})`)
+                }
+                this.updateMachineMetadata((current) => {
+                    const base = current ?? this.machine.metadata
+                    if (!base) {
+                        return { workspaceRoot: desiredWorkspaceRoot } as MachineMetadata
+                    }
+                    if (desiredWorkspaceRoot) {
+                        return { ...base, workspaceRoot: desiredWorkspaceRoot }
+                    }
+                    const { workspaceRoot: _omit, ...rest } = base
+                    return rest as MachineMetadata
+                }).then(() => {
+                    console.log(`[HAPI] Workspace root synced: ${this.machine.metadata?.workspaceRoot ?? '(none)'}`)
+                }).catch((error) => {
+                    console.error('[HAPI] Failed to sync workspace root:', error instanceof Error ? error.message : error)
+                })
+            } else if (desiredWorkspaceRoot) {
+                console.log(`[HAPI] Workspace root already up to date on hub: ${desiredWorkspaceRoot}`)
+            }
+
             this.startKeepAlive()
         })
 

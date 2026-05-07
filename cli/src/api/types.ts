@@ -24,6 +24,7 @@ export type {
 export type SessionPermissionMode = PermissionMode
 export type SessionCollaborationMode = CodexCollaborationMode
 export type SessionModel = string | null
+export type SessionModelReasoningEffort = string | null
 export type SessionEffort = string | null
 
 export { AgentStateSchema, AttachmentMetadataSchema, MetadataSchema }
@@ -49,7 +50,8 @@ export const MachineMetadataSchema = z.object({
     // Per-machine Claude model picker options sourced from ~/.hapi/settings.json.
     // Absent → web layer uses built-in defaults.
     claudeModels: z.array(ClaudeModelOptionSchema).optional(),
-    claudeDefaultContextWindow: z.number().int().positive().optional()
+    claudeDefaultContextWindow: z.number().int().positive().optional(),
+    workspaceRoot: z.string().optional()
 })
 
 export type MachineMetadata = z.infer<typeof MachineMetadataSchema>
@@ -113,8 +115,9 @@ export const CreateSessionResponseSchema = z.object({
         thinking: z.boolean(),
         thinkingAt: z.number(),
         todos: TodosSchema.optional(),
-        model: z.string().nullable(),
-        effort: z.string().nullable(),
+        model: z.string().nullable().optional().default(null),
+        modelReasoningEffort: z.string().nullable().optional().default(null),
+        effort: z.string().nullable().optional().default(null),
         permissionMode: PermissionModeSchema.optional(),
         collaborationMode: CodexCollaborationModeSchema.optional()
     })

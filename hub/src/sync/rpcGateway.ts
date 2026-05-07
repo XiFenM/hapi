@@ -44,6 +44,32 @@ export type RpcPathExistsResponse = {
     exists: Record<string, boolean>
 }
 
+export type RpcCodexModel = {
+    id: string
+    displayName: string
+    isDefault: boolean
+    defaultReasoningEffort?: string | null
+    supportedReasoningEfforts?: string[]
+}
+
+export type RpcListCodexModelsResponse = {
+    success: boolean
+    models?: RpcCodexModel[]
+    error?: string
+}
+
+export type RpcOpencodeModel = {
+    modelId: string
+    name?: string
+}
+
+export type RpcListOpencodeModelsResponse = {
+    success: boolean
+    availableModels?: RpcOpencodeModel[]
+    currentModelId?: string | null
+    error?: string
+}
+
 export class RpcGateway {
     constructor(
         private readonly io: Server,
@@ -94,6 +120,7 @@ export class RpcGateway {
         config: {
             permissionMode?: PermissionMode
             model?: string | null
+            modelReasoningEffort?: string | null
             effort?: string | null
             collaborationMode?: CodexCollaborationMode
         }
@@ -126,13 +153,14 @@ export class RpcGateway {
         sessionType?: 'simple' | 'worktree',
         worktreeName?: string,
         resumeSessionId?: string,
-        effort?: string
+        effort?: string,
+        permissionMode?: PermissionMode
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
         try {
             const result = await this.machineRpc(
                 machineId,
                 'spawn-happy-session',
-                { type: 'spawn-in-directory', directory, agent, model, modelReasoningEffort, yolo, sessionType, worktreeName, resumeSessionId, effort }
+                { type: 'spawn-in-directory', directory, agent, model, modelReasoningEffort, yolo, sessionType, worktreeName, resumeSessionId, effort, permissionMode }
             )
             if (result && typeof result === 'object') {
                 const obj = result as Record<string, unknown>
@@ -167,10 +195,12 @@ export class RpcGateway {
         }
     }
 
+    // Fork: machine-scope directory listing (no workspace restriction)
     async listMachineDirectory(machineId: string, path: string): Promise<RpcListDirectoryResponse> {
         return await this.machineRpc(machineId, 'machine-list-directory', { path }) as RpcListDirectoryResponse
     }
 
+    // Fork: machine-scope file read with chunking for large files
     async readMachineFile(machineId: string, path: string): Promise<RpcReadFileResponse> {
         const CHUNK_SIZE = 512 * 1024       // 512KB per chunk (base64 ≈ 700KB, under Socket.IO 1MB limit)
         const CHUNK_THRESHOLD = CHUNK_SIZE  // files > 512KB use chunked read
@@ -208,6 +238,15 @@ export class RpcGateway {
         const buffers = chunks.map(c => Buffer.from(c, 'base64'))
         const combined = Buffer.concat(buffers)
         return { success: true, content: combined.toString('base64') }
+    }
+
+    // Upstream: workspace-scoped directory listing (--workspace-root opt-in)
+    async listWorkspaceDirectory(machineId: string, path: string): Promise<RpcListDirectoryResponse> {
+        const result = await this.machineRpc(machineId, 'list-directory', { path }) as RpcListDirectoryResponse | unknown
+        if (!result || typeof result !== 'object') {
+            return { success: false, error: 'Unexpected list-directory result' }
+        }
+        return result as RpcListDirectoryResponse
     }
 
     async checkPathsExist(machineId: string, paths: string[]): Promise<Record<string, boolean>> {
@@ -282,6 +321,22 @@ export class RpcGateway {
             skills?: Array<{ name: string; description?: string }>
             error?: string
         }
+    }
+
+    async listCodexModelsForSession(sessionId: string): Promise<RpcListCodexModelsResponse> {
+        return await this.sessionRpc(sessionId, 'listCodexModels', {}) as RpcListCodexModelsResponse
+    }
+
+    async listCodexModelsForMachine(machineId: string): Promise<RpcListCodexModelsResponse> {
+        return await this.machineRpc(machineId, 'listCodexModels', {}) as RpcListCodexModelsResponse
+    }
+
+    async listOpencodeModelsForSession(sessionId: string): Promise<RpcListOpencodeModelsResponse> {
+        return await this.sessionRpc(sessionId, 'listOpencodeModels', {}) as RpcListOpencodeModelsResponse
+    }
+
+    async listOpencodeModelsForCwd(machineId: string, cwd: string): Promise<RpcListOpencodeModelsResponse> {
+        return await this.machineRpc(machineId, 'listOpencodeModelsForCwd', { cwd }) as RpcListOpencodeModelsResponse
     }
 
     private async sessionRpc(sessionId: string, method: string, params: unknown): Promise<unknown> {

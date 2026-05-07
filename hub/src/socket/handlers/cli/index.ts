@@ -17,6 +17,7 @@ type SessionAlivePayload = {
     mode?: 'local' | 'remote'
     permissionMode?: PermissionMode
     model?: string | null
+    modelReasoningEffort?: string | null
     effort?: string | null
     collaborationMode?: CodexCollaborationMode
 }
@@ -40,10 +41,12 @@ export type CliHandlersDeps = {
     onSessionEnd?: (payload: SessionEndPayload) => void
     onMachineAlive?: (payload: MachineAlivePayload) => void
     onWebappEvent?: (event: SyncEvent) => void
+    onBackgroundTaskDelta?: (sessionId: string, delta: { started: number; completed: number }) => void
+    onSessionActivity?: (sessionId: string, updatedAt: number) => void
 }
 
 export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlersDeps): void {
-    const { io, store, rpcRegistry, terminalRegistry, onSessionAlive, onSessionEnd, onMachineAlive, onWebappEvent } = deps
+    const { io, store, rpcRegistry, terminalRegistry, onSessionAlive, onSessionEnd, onMachineAlive, onWebappEvent, onBackgroundTaskDelta, onSessionActivity } = deps
     const terminalNamespace = io.of('/terminal')
     const namespace = typeof socket.data.namespace === 'string' ? socket.data.namespace : null
 
@@ -102,7 +105,9 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
         emitAccessError,
         onSessionAlive,
         onSessionEnd,
-        onWebappEvent
+        onWebappEvent,
+        onBackgroundTaskDelta,
+        onSessionActivity
     })
     registerMachineHandlers(socket, {
         store,

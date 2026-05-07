@@ -39,6 +39,8 @@ export type SocketServerDeps = {
     onSessionAlive?: (payload: { sid: string; time: number; thinking?: boolean; mode?: 'local' | 'remote' }) => void
     onSessionEnd?: (payload: { sid: string; time: number }) => void
     onMachineAlive?: (payload: { machineId: string; time: number }) => void
+    onBackgroundTaskDelta?: (sessionId: string, delta: { started: number; completed: number }) => void
+    onSessionActivity?: (sessionId: string, updatedAt: number) => void
 }
 
 export function createSocketServer(deps: SocketServerDeps): {
@@ -113,7 +115,9 @@ export function createSocketServer(deps: SocketServerDeps): {
         onSessionAlive: deps.onSessionAlive,
         onSessionEnd: deps.onSessionEnd,
         onMachineAlive: deps.onMachineAlive,
-        onWebappEvent: deps.onWebappEvent
+        onWebappEvent: deps.onWebappEvent,
+        onBackgroundTaskDelta: deps.onBackgroundTaskDelta,
+        onSessionActivity: deps.onSessionActivity
     }))
 
     terminalNs.use(async (socket, next) => {

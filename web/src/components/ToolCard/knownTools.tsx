@@ -159,7 +159,12 @@ export const knownTools: Record<string, {
             }
             return null
         },
-        minimal: true
+        minimal: (opts) => {
+            const result = isObject(opts.result) ? opts.result : null
+            const stdout = result && typeof result.stdout === 'string' ? result.stdout.trim() : ''
+            const stderr = result && typeof result.stderr === 'string' ? result.stderr.trim() : ''
+            return stdout.length === 0 && stderr.length === 0
+        }
     },
     CodexPermission: {
         icon: () => <QuestionIcon className={DEFAULT_ICON_CLASS} />,
@@ -276,6 +281,26 @@ export const knownTools: Record<string, {
         title: () => 'Plan',
         subtitle: (opts) => formatChecklistCount(extractUpdatePlanChecklist(opts.input, opts.result), 'step'),
         minimal: (opts) => extractUpdatePlanChecklist(opts.input, opts.result).length === 0
+    },
+    Skill: {
+        icon: () => <PuzzleIcon className={DEFAULT_ICON_CLASS} />,
+        title: (opts) => {
+            const skill = getInputStringAny(opts.input, ['skill'])
+            return skill ? `Skill: ${skill}` : 'Skill'
+        },
+        minimal: true
+    },
+    Agent: {
+        icon: () => <RocketIcon className={DEFAULT_ICON_CLASS} />,
+        title: (opts) => {
+            const description = getInputStringAny(opts.input, ['description'])
+            return description ?? 'Agent'
+        },
+        subtitle: (opts) => {
+            const model = getInputStringAny(opts.input, ['subagent_type'])
+            return model ?? null
+        },
+        minimal: true
     },
     CodexReasoning: {
         icon: () => <BulbIcon className={DEFAULT_ICON_CLASS} />,

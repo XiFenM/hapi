@@ -32,12 +32,80 @@ function normalizeAgentEvent(value: unknown): AgentEvent | null {
     return value as AgentEvent
 }
 
+function normalizeCodexTokenUsage(value: unknown) {
+    const info = isObject(value) ? value : null
+    if (!info) return null
+    // Codex reports both:
+    // - `total`: cumulative usage for the whole session (can be millions).
+    // - `last`: current turn/request usage, which matches the live context bar.
+    // Prefer `last`; falling back to `total` keeps older payloads working.
+    const usageSource = isObject(info.last)
+        ? info.last
+        : isObject(info.total)
+            ? info.total
+            : info
+    const inputTokens = asNumber(usageSource.inputTokens ?? usageSource.input_tokens)
+    const outputTokens = asNumber(usageSource.outputTokens ?? usageSource.output_tokens)
+    if (inputTokens === null || outputTokens === null) return null
+
+    return {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        // Codex `inputTokens` already includes cached input tokens; expose cache
+        // hits for display, but use `context_tokens` to avoid double-counting.
+        cache_creation_input_tokens: undefined,
+        cache_read_input_tokens: asNumber(usageSource.cachedInputTokens ?? usageSource.cacheReadInputTokens ?? usageSource.cache_read_input_tokens) ?? undefined,
+        context_tokens: inputTokens,
+        context_window: asNumber(info.modelContextWindow ?? info.model_context_window) ?? undefined
+    }
+}
+
+function normalizePlanStatus(value: unknown): 'pending' | 'in_progress' | 'completed' {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase().replace(/[\s-]/g, '_') : ''
+    if (raw === 'completed' || raw === 'complete' || raw === 'done') return 'completed'
+    if (raw === 'in_progress' || raw === 'inprogress' || raw === 'active' || raw === 'running') return 'in_progress'
+    return 'pending'
+}
+
+function normalizePlanEntries(value: unknown): Array<{ step: string; status: 'pending' | 'in_progress' | 'completed' }> {
+    const record = isObject(value) ? value : null
+    const entries = Array.isArray(value)
+        ? value
+        : Array.isArray(record?.plan)
+            ? record.plan
+            : Array.isArray(record?.items)
+                ? record.items
+                : Array.isArray(record?.steps)
+                    ? record.steps
+                    : []
+
+    const plan: Array<{ step: string; status: 'pending' | 'in_progress' | 'completed' }> = []
+    for (const entry of entries) {
+        if (typeof entry === 'string') {
+            plan.push({ step: entry, status: 'pending' })
+            continue
+        }
+        if (!isObject(entry)) continue
+        const step = asString(entry.step)
+            ?? asString(entry.content)
+            ?? asString(entry.text)
+            ?? asString(entry.title)
+            ?? asString(entry.description)
+        if (!step) continue
+        plan.push({
+            step,
+            status: normalizePlanStatus(entry.status ?? entry.state)
+        })
+    }
+    return plan
+}
+
 function normalizeAssistantOutput(
     messageId: string,
     localId: string | null,
     createdAt: number,
     data: Record<string, unknown>,
-    meta?: unknown
+    meta?: unknown,
 ): NormalizedMessage | null {
     const uuid = asString(data.uuid) ?? messageId
     const parentUUID = asString(data.parentUuid) ?? null
@@ -74,11 +142,13 @@ function normalizeAssistantOutput(
     const usage = isObject(message.usage) ? (message.usage as Record<string, unknown>) : null
     const inputTokens = usage ? asNumber(usage.input_tokens) : null
     const outputTokens = usage ? asNumber(usage.output_tokens) : null
+    const model = asString(message.model) ?? null
 
     return {
         id: messageId,
         localId,
         createdAt,
+        model,
         role: 'agent',
         isSidechain,
         content: blocks,
@@ -98,7 +168,7 @@ function normalizeUserOutput(
     localId: string | null,
     createdAt: number,
     data: Record<string, unknown>,
-    meta?: unknown
+    meta?: unknown,
 ): NormalizedMessage | null {
     const uuid = asString(data.uuid) ?? messageId
     const parentUUID = asString(data.parentUuid) ?? null
@@ -116,41 +186,67 @@ function normalizeUserOutput(
             createdAt,
             role: 'agent',
             isSidechain: true,
-            content: [{ type: 'sidechain', uuid, prompt: messageContent }]
+            content: [{ type: 'sidechain', uuid, parentUUID, prompt: messageContent }]
         }
     }
 
     // Handle system-injected messages that arrive as type:'user' through
     // the agent output path. Real user text goes through normalizeUserRecord.
+    //
+    // All string-content user messages here are system-injected (subagent
+    // prompts, task notifications, system reminders, etc.).  Always emit as
+    // sidechain so the uuid/parentUUID chain is preserved — the reducer uses
+    // sidechain UUIDs to identify sentinel auto-replies.  Task-notification
+    // summaries are extracted as events by the reducer, not here.
     if (typeof messageContent === 'string') {
-        // Convert <task-notification> to a visible event
-        const trimmed = messageContent.trimStart()
-        if (trimmed.startsWith('<task-notification>')) {
-            const summary = trimmed.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim()
-            if (summary) {
-                return {
-                    id: messageId,
-                    localId,
-                    createdAt,
-                    role: 'event',
-                    content: { type: 'message', message: summary },
-                    isSidechain: false,
-                    meta
-                }
-            }
-        }
-
-        // All other string-content user messages in this path are
-        // system-injected (subagent prompts, system reminders, etc.).
-        // Treat as sidechain so the tracer can match it to a parent Task
-        // tool call; unmatched ones are harmlessly skipped by the reducer.
         return {
             id: messageId,
             localId,
             createdAt,
             role: 'agent',
             isSidechain: true,
-            content: [{ type: 'sidechain', uuid, prompt: messageContent }]
+            content: [{ type: 'sidechain', uuid, parentUUID, prompt: messageContent }]
+        }
+    }
+
+    // Sidechain user messages with array content (e.g. subagent prompts
+    // that Claude Code serialised as [{type:'text', text:'...'}] instead
+    // of a plain string).  Extract the text and treat as sidechain so the
+    // tracer can match it to the parent Task tool call.
+    if (isSidechain && Array.isArray(messageContent)) {
+        const textParts = messageContent
+            .filter((b: unknown) => isObject(b) && b.type === 'text' && typeof b.text === 'string')
+            .map((b: Record<string, unknown>) => b.text as string)
+        if (textParts.length > 0) {
+            return {
+                id: messageId,
+                localId,
+                createdAt,
+                role: 'agent',
+                isSidechain: true,
+                content: [{ type: 'sidechain', uuid, parentUUID, prompt: textParts.join('\n\n') }]
+            }
+        }
+    }
+
+    // Non-sidechain array content that is all text blocks — these are real
+    // user messages that the CLI wrapped as agent output because
+    // isExternalUserMessage rejects array content. Emit as role:'user' so
+    // they display in the user lane.
+    if (!isSidechain && Array.isArray(messageContent)) {
+        const textParts = messageContent
+            .filter((b: unknown) => isObject(b) && b.type === 'text' && typeof b.text === 'string')
+            .map((b: Record<string, unknown>) => b.text as string)
+        if (textParts.length > 0 && textParts.length === messageContent.length) {
+            return {
+                id: messageId,
+                localId,
+                createdAt,
+                role: 'user',
+                isSidechain: false,
+                content: { type: 'text', text: textParts.join('\n\n') },
+                meta
+            }
         }
     }
 
@@ -211,7 +307,7 @@ export function normalizeAgentRecord(
     localId: string | null,
     createdAt: number,
     content: unknown,
-    meta?: unknown
+    meta?: unknown,
 ): NormalizedMessage | null {
     if (!isObject(content) || typeof content.type !== 'string') return null
 
@@ -265,7 +361,8 @@ export function normalizeAgentRecord(
                 role: 'event',
                 content: {
                     type: 'turn-duration',
-                    durationMs: asNumber(data.durationMs) ?? 0
+                    durationMs: asNumber(data.durationMs) ?? 0,
+                    targetMessageId: asString(data.messageId) ?? undefined
                 },
                 isSidechain: false,
                 meta
@@ -349,6 +446,23 @@ export function normalizeAgentRecord(
             }
         }
 
+        if (data.type === 'token_count') {
+            const usage = normalizeCodexTokenUsage(data.info)
+            return usage ? {
+                id: messageId,
+                localId,
+                createdAt,
+                role: 'event',
+                content: {
+                    type: 'token-count',
+                    info: data.info
+                },
+                isSidechain: false,
+                meta,
+                usage
+            } : null
+        }
+
         if (data.type === 'tool-call' && typeof data.callId === 'string') {
             const uuid = asString(data.id) ?? messageId
             return {
@@ -382,10 +496,50 @@ export function normalizeAgentRecord(
                     type: 'tool-result',
                     tool_use_id: data.callId,
                     content: data.output,
-                    is_error: false,
+                    is_error: Boolean(data.is_error),
                     uuid,
                     parentUUID: null
                 }],
+                meta
+            }
+        }
+
+        if (data.type === 'plan_update') {
+            const plan = normalizePlanEntries(data.plan ?? data.update ?? data.items ?? data.steps ?? data)
+            if (plan.length === 0) return null
+            const uuid = asString(data.id) ?? messageId
+            return {
+                id: messageId,
+                localId,
+                createdAt,
+                role: 'agent',
+                isSidechain: false,
+                content: [
+                    {
+                        type: 'tool-call',
+                        id: 'codex-plan-state',
+                        name: 'update_plan',
+                        input: {
+                            plan,
+                            source: 'codex'
+                        },
+                        description: null,
+                        uuid,
+                        parentUUID: null
+                    },
+                    {
+                        type: 'tool-result',
+                        tool_use_id: 'codex-plan-state',
+                        content: {
+                            plan,
+                            source: 'codex',
+                            status: 'updated'
+                        },
+                        is_error: false,
+                        uuid: `${uuid}:result`,
+                        parentUUID: null
+                    }
+                ],
                 meta
             }
         }
