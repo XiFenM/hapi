@@ -64,22 +64,22 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
                     let size: number | undefined
                     let modified: number | undefined
 
-                    if (entry.isDirectory()) {
-                        type = 'directory'
-                    } else if (entry.isFile()) {
-                        type = 'file'
-                    } else if (entry.isSymbolicLink()) {
-                        type = 'other'
-                    }
-
-                    if (!entry.isSymbolicLink()) {
-                        try {
-                            const stats = await stat(fullPath)
-                            size = stats.size
-                            modified = stats.mtime.getTime()
-                        } catch (error) {
-                            logger.debug(`Failed to stat ${fullPath}:`, error)
+                    try {
+                        // stat() follows symlinks, so a symlink pointing at
+                        // a directory/file is surfaced as that target type.
+                        const stats = await stat(fullPath)
+                        if (stats.isDirectory()) {
+                            type = 'directory'
+                        } else if (stats.isFile()) {
+                            type = 'file'
                         }
+                        size = stats.size
+                        modified = stats.mtime.getTime()
+                    } catch (error) {
+                        // Broken symlink or permission denied — fall back to dirent info
+                        logger.debug(`Failed to stat ${fullPath}:`, error)
+                        if (entry.isDirectory()) type = 'directory'
+                        else if (entry.isFile()) type = 'file'
                     }
 
                     return {
@@ -134,11 +134,6 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
 
                     await Promise.all(
                         entries.map(async (entry) => {
-                            if (entry.isSymbolicLink()) {
-                                logger.debug(`Skipping symlink: ${join(path, entry.name)}`)
-                                return
-                            }
-
                             const childPath = join(path, entry.name)
                             const childNode = await buildTree(childPath, entry.name, currentDepth + 1)
                             if (childNode) {

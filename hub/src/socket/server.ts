@@ -57,13 +57,21 @@ export function createSocketServer(deps: SocketServerDeps): {
         credentials: false
     }
 
+    // socket.io/engine.io default is 1MB. Bumped to 64MB so that
+    // RPC payloads carrying file contents (images, large source files)
+    // are not silently dropped, which surfaces to the client as a
+    // 30s "operation has timed out".
+    const MAX_HTTP_BUFFER_SIZE = 64 * 1024 * 1024
+
     const io = new Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>({
-        cors: corsOptions
+        cors: corsOptions,
+        maxHttpBufferSize: MAX_HTTP_BUFFER_SIZE
     })
 
     const engine = new Engine({
         path: '/socket.io/',
         cors: corsOptions,
+        maxHttpBufferSize: MAX_HTTP_BUFFER_SIZE,
         allowRequest: async (req) => {
             const origin = req.headers.get('origin')
             if (!origin || allowAllOrigins || corsOrigins.includes(origin)) {

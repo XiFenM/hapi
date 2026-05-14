@@ -96,6 +96,24 @@ function resolveLanguage(path: string): string | undefined {
     return langAlias[ext] ?? ext
 }
 
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    bmp: 'image/bmp',
+    ico: 'image/x-icon',
+    avif: 'image/avif'
+}
+
+function resolveImageMime(path: string): string | undefined {
+    const ext = path.split('.').pop()?.toLowerCase()
+    if (!ext) return undefined
+    return IMAGE_MIME_BY_EXT[ext]
+}
+
 function getUtf8ByteLength(value: string): number {
     return new TextEncoder().encode(value).length
 }
@@ -157,11 +175,15 @@ export default function FilePage() {
     const diffFailed = diffQuery.data?.success === false
 
     const fileContentResult = fileQuery.data
-    const decodedContentResult = fileContentResult?.success && fileContentResult.content
+    const imageMime = useMemo(() => resolveImageMime(filePath), [filePath])
+    const imageDataUrl = imageMime && fileContentResult?.success && fileContentResult.content
+        ? `data:${imageMime};base64,${fileContentResult.content}`
+        : null
+    const decodedContentResult = fileContentResult?.success && fileContentResult.content && !imageMime
         ? decodeBase64(fileContentResult.content)
         : { text: '', ok: true }
     const decodedContent = decodedContentResult.text
-    const binaryFile = fileContentResult?.success
+    const binaryFile = fileContentResult?.success && !imageMime
         ? !decodedContentResult.ok || isBinaryContent(decodedContent)
         : false
 
@@ -262,6 +284,14 @@ export default function FilePage() {
                         <FileContentSkeleton />
                     ) : fileError ? (
                         <div className="text-sm text-[var(--app-hint)]">{fileError}</div>
+                    ) : imageDataUrl ? (
+                        <div className="flex justify-center rounded-md border border-[var(--app-border)] bg-[var(--app-code-bg)] p-3">
+                            <img
+                                src={imageDataUrl}
+                                alt={fileName}
+                                className="max-h-[80vh] max-w-full object-contain"
+                            />
+                        </div>
                     ) : binaryFile ? (
                         <div className="text-sm text-[var(--app-hint)]">
                             This looks like a binary file. It cannot be displayed.

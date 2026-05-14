@@ -1,4 +1,4 @@
-import { access, readdir, readFile } from 'fs/promises';
+import { access, readdir, readFile, stat } from 'fs/promises';
 import { basename, dirname, join, resolve } from 'path';
 import { homedir } from 'os';
 import { parse as parseYaml } from 'yaml';
@@ -106,29 +106,44 @@ function extractSkillSummary(skillDir: string, fileContent: string): SkillSummar
     return { name, description };
 }
 
+// stat() follows symlinks; readdir Dirent.isDirectory() does not.
+// A symlinked skill (e.g. .agents/skills/draw-ui -> ../../draw-ui)
+// must still be picked up.
+async function isDirectoryFollowingSymlinks(path: string): Promise<boolean> {
+    try {
+        return (await stat(path)).isDirectory();
+    } catch {
+        return false;
+    }
+}
+
 async function listTopLevelSkillDirs(skillsRoot: string, options: { includeCodexSystem?: boolean } = {}): Promise<string[]> {
     try {
         const entries = await readdir(skillsRoot, { withFileTypes: true });
         const result: string[] = [];
 
         for (const entry of entries) {
-            if (!entry.isDirectory()) {
+            const entryPath = join(skillsRoot, entry.name);
+            const isDir = entry.isDirectory() || (entry.isSymbolicLink() && await isDirectoryFollowingSymlinks(entryPath));
+            if (!isDir) {
                 continue;
             }
 
             if (entry.name.startsWith('.')) {
                 if (options.includeCodexSystem && entry.name === '.system') {
-                    const systemEntries = await readdir(join(skillsRoot, entry.name), { withFileTypes: true }).catch(() => []);
+                    const systemEntries = await readdir(entryPath, { withFileTypes: true }).catch(() => []);
                     for (const systemEntry of systemEntries) {
-                        if (systemEntry.isDirectory() && !systemEntry.name.startsWith('.')) {
-                            result.push(join(skillsRoot, entry.name, systemEntry.name));
+                        const systemEntryPath = join(entryPath, systemEntry.name);
+                        const systemIsDir = systemEntry.isDirectory() || (systemEntry.isSymbolicLink() && await isDirectoryFollowingSymlinks(systemEntryPath));
+                        if (systemIsDir && !systemEntry.name.startsWith('.')) {
+                            result.push(systemEntryPath);
                         }
                     }
                 }
                 continue;
             }
 
-            result.push(join(skillsRoot, entry.name));
+            result.push(entryPath);
         }
 
         return result;
