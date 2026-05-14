@@ -8,6 +8,15 @@ declare const self: ServiceWorkerGlobalScope & {
     __WB_MANIFEST: Array<string | { url: string; revision?: string }>
 }
 
+// Activate a freshly-deployed SW immediately instead of waiting for every
+// open tab to close. Otherwise users keep seeing stale bundles after deploy.
+self.addEventListener('install', () => {
+    self.skipWaiting()
+})
+self.addEventListener('activate', (event) => {
+    event.waitUntil(self.clients.claim())
+})
+
 type PushPayload = {
     title: string
     body?: string
