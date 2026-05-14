@@ -14,7 +14,7 @@ cd "$SCRIPT_DIR"
 $BUN run build:single-exe
 
 echo "🛑 停止 Runner..."
-"$TARGET" runner stop 2>/dev/null || true
+systemctl stop hapi-runner 2>/dev/null || true
 
 echo "🛑 停止 Hub..."
 systemctl stop hapi
@@ -30,7 +30,9 @@ echo "🚀 启动 Hub..."
 systemctl start hapi
 
 echo "🚀 启动本机 Runner..."
-"$TARGET" runner start
+# hapi-runner.service has an ExecStartPre that waits for Hub readiness.
+systemctl start hapi-runner
 
 echo "✅ 部署完成"
-echo "   Hub: $(systemctl is-active hapi)"
+echo "   Hub:    $(systemctl is-active hapi)"
+echo "   Runner: $(systemctl is-active hapi-runner)"
