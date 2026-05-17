@@ -269,10 +269,18 @@ export class Query implements AsyncIterableIterator<SDKMessage> {
                 throw new Error('canCallTool callback is not provided.')
             }
             return this.canCallTool(request.request.tool_name, request.request.input, {
-                signal
+                signal,
+                toolUseID: request.request.tool_use_id,
+                agentID: request.request.agent_id,
+                suggestions: request.request.permission_suggestions,
+                blockedPath: request.request.blocked_path,
+                decisionReason: request.request.decision_reason,
+                title: request.request.title,
+                displayName: request.request.display_name,
+                description: request.request.description
             })
         }
-        
+
         throw new Error('Unsupported control request subtype: ' + request.request.subtype)
     }
 

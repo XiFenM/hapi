@@ -106,3 +106,86 @@ describe('PermissionHandler — YOLO plan mode', () => {
         expect(queueItems).toHaveLength(0);
     });
 });
+
+describe('PermissionHandler — SDK-provided toolUseID', () => {
+    // Regression: sub-agent (sidechain) tool calls used to fail with
+    // "Could not resolve tool call ID for X" because the assistant tool_use
+    // block arrives *after* canCallTool fires. The SDK already includes
+    // tool_use_id in the can_use_tool control request, so we should use it
+    // directly and skip the name+input lookup.
+    it('uses toolUseID from options instead of matching against tracked tool_use blocks', async () => {
+        const { session } = createFakeSession();
+        const handler = new PermissionHandler(session);
+        handler.handleModeChange('default');
+
+        const subAgentToolUseId = 'toolu_subagent_WebFetch_42';
+
+        // Deliberately do NOT call handler.onMessage with the tool_use block
+        // — this simulates the sub-agent race where the assistant message
+        // hasn't been emitted yet when canCallTool fires.
+        const decision = handler.handleToolCall(
+            'WebFetch',
+            { url: 'https://example.com', prompt: 'fetch' },
+            { permissionMode: 'default' } as any,
+            {
+                signal: new AbortController().signal,
+                toolUseID: subAgentToolUseId,
+                agentID: 'agent_xyz'
+            }
+        );
+
+        // Pending request must be registered under the SDK-provided id
+        // immediately, without the 1-second resolveToolCallId fallback or
+        // the "Could not resolve tool call ID" throw.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        const updateAgentState = session.client.updateAgentState as unknown as ReturnType<typeof vi.fn>;
+        const lastUpdate = updateAgentState.mock.calls.at(-1)?.[0] as (s: any) => any;
+        const nextState = lastUpdate?.({ requests: {}, completedRequests: {} });
+        expect(nextState?.requests?.[subAgentToolUseId]).toBeDefined();
+        expect(nextState?.requests?.[subAgentToolUseId].tool).toBe('WebFetch');
+
+        // Resolve the pending request so the promise doesn't dangle.
+        const registerHandler = session.client.rpcHandlerManager.registerHandler as unknown as ReturnType<typeof vi.fn>;
+        const permissionRpcHandler = registerHandler.mock.calls.find(([method]) => method === 'permission')?.[1];
+        await permissionRpcHandler?.({ id: subAgentToolUseId, approved: true });
+        await expect(decision).resolves.toEqual({
+            behavior: 'allow',
+            updatedInput: { url: 'https://example.com', prompt: 'fetch' }
+        });
+    });
+
+    it('falls back to name+input matching when SDK omits tool_use_id', async () => {
+        const { session } = createFakeSession();
+        const handler = new PermissionHandler(session);
+        handler.handleModeChange('default');
+
+        // Older SDK / sanity check: no toolUseID provided, but the assistant
+        // tool_use block is already known — the legacy resolver must still
+        // find it.
+        handler.onMessage({
+            type: 'assistant',
+            message: {
+                role: 'assistant',
+                content: [{ type: 'tool_use', id: 'tc-legacy', name: 'Read', input: { file_path: '/tmp/x' } }],
+            },
+        } as any);
+
+        const decision = handler.handleToolCall(
+            'Read',
+            { file_path: '/tmp/x' },
+            { permissionMode: 'default' } as any,
+            { signal: new AbortController().signal }
+        );
+
+        const registerHandler = session.client.rpcHandlerManager.registerHandler as unknown as ReturnType<typeof vi.fn>;
+        const permissionRpcHandler = registerHandler.mock.calls.find(([method]) => method === 'permission')?.[1];
+        // Give addPendingRequest a tick to register.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await permissionRpcHandler?.({ id: 'tc-legacy', approved: true });
+        await expect(decision).resolves.toEqual({
+            behavior: 'allow',
+            updatedInput: { file_path: '/tmp/x' }
+        });
+    });
+});

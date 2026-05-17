@@ -7,7 +7,7 @@
 
 import { logger } from "@/lib";
 import { SDKAssistantMessage, SDKMessage, SDKUserMessage } from "../sdk";
-import { PermissionResult } from "../sdk/types";
+import { CanCallToolOptions, PermissionResult } from "../sdk/types";
 import { PLAN_FAKE_REJECT, PLAN_FAKE_RESTART } from "../sdk/prompts";
 import { Session } from "../session";
 import { deepEqual } from "@/utils/deepEqual";
@@ -260,7 +260,7 @@ export class PermissionHandler extends BasePermissionHandler<PermissionResponse,
     /**
      * Creates the canCallTool callback for the SDK
      */
-    handleToolCall = async (toolName: string, input: unknown, mode: EnhancedMode, options: { signal: AbortSignal }): Promise<PermissionResult> => {
+    handleToolCall = async (toolName: string, input: unknown, mode: EnhancedMode, options: CanCallToolOptions): Promise<PermissionResult> => {
         const isQuestionTool = isQuestionToolName(toolName);
 
         // Check if tool is explicitly allowed
@@ -308,16 +308,28 @@ export class PermissionHandler extends BasePermissionHandler<PermissionResponse,
         //
         // Approval flow
         //
+        // Claude Code 2.x supplies the real tool_use_id directly in the
+        // can_use_tool control request. Prefer it — for sub-agent (sidechain)
+        // tool calls the assistant tool_use block arrives *after* this
+        // callback fires, so resolveToolCallId's name+input lookup races
+        // and used to fail with "Could not resolve tool call ID for X".
+        // Fall back to the old matching path only when the SDK didn't send
+        // tool_use_id (older Claude Code builds).
 
-        let toolCallId = this.resolveToolCallId(toolName, input);
-        if (!toolCallId) { // What if we got permission before tool call
-            await delay(1000);
-            toolCallId = this.resolveToolCallId(toolName, input);
-            if (!toolCallId) {
-                throw new Error(`Could not resolve tool call ID for ${toolName}`);
-            }
+        const toolCallId = options.toolUseID ?? await this.resolveToolCallIdWithRetry(toolName, input);
+        if (!toolCallId) {
+            throw new Error(`Could not resolve tool call ID for ${toolName}`);
         }
         return this.handlePermissionRequest(toolCallId, toolName, input, options.signal);
+    }
+
+    private async resolveToolCallIdWithRetry(toolName: string, input: unknown): Promise<string | null> {
+        let toolCallId = this.resolveToolCallId(toolName, input);
+        if (toolCallId) return toolCallId;
+        // The assistant tool_use block may arrive just after this callback;
+        // give it a moment.
+        await delay(1000);
+        return this.resolveToolCallId(toolName, input);
     }
 
     /**

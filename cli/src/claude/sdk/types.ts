@@ -105,6 +105,20 @@ export interface CanUseToolRequest extends ControlRequest {
     subtype: 'can_use_tool'
     tool_name: string
     input: unknown
+    // Additional fields that Claude Code 2.x sends in can_use_tool control
+    // requests. Most notably tool_use_id, which the SDK provides upfront so
+    // callers don't have to reconstruct it by matching tool_name + input
+    // against previously-seen tool_use blocks (a strategy that races for
+    // sub-agent tool calls, where assistant tool_use blocks are emitted
+    // *after* the permission decision).
+    tool_use_id?: string
+    agent_id?: string
+    permission_suggestions?: unknown
+    blocked_path?: string
+    decision_reason?: unknown
+    title?: string
+    display_name?: string
+    description?: string
 }
 
 export interface CanUseToolControlRequest {
@@ -146,10 +160,28 @@ export type PermissionResult = {
 }
 
 /**
+ * Extra context Claude Code 2.x attaches to a can_use_tool control request.
+ * `toolUseID` is the critical one — it lets the permission handler key state
+ * by the real tool_use id instead of reconstructing it via tool_name+input
+ * matching, which races for sub-agent tool calls.
+ */
+export interface CanCallToolOptions {
+    signal: AbortSignal
+    toolUseID?: string
+    agentID?: string
+    suggestions?: unknown
+    blockedPath?: string
+    decisionReason?: unknown
+    title?: string
+    displayName?: string
+    description?: string
+}
+
+/**
  * Callback function for tool permission checks
  */
 export interface CanCallToolCallback {
-    (toolName: string, input: unknown, options: { signal: AbortSignal }): Promise<PermissionResult>
+    (toolName: string, input: unknown, options: CanCallToolOptions): Promise<PermissionResult>
 }
 
 /**
