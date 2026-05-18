@@ -111,7 +111,15 @@ vi.mock('./codexAppServerClient', () => {
         }
 
         async compactThread(params?: { threadId?: string }): Promise<Record<string, never>> {
-            harness.compactThreadIds.push(params?.threadId ?? 'thread-unknown');
+            const threadId = params?.threadId ?? 'thread-unknown';
+            harness.compactThreadIds.push(threadId);
+            // The real app server replies to compact/start with an empty ack,
+            // then fires `thread/compacted` once compaction finishes. Mirror
+            // that here so codexRemoteLauncher's wait-for-completion path
+            // unblocks instead of hanging until test timeout.
+            const compacted = { thread: { id: threadId } };
+            harness.notifications.push({ method: 'thread/compacted', params: compacted });
+            this.notificationHandler?.('thread/compacted', compacted);
             return {};
         }
 
