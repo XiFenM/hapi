@@ -119,9 +119,12 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         const appServerEventConverter = new AppServerEventConverter();
 
         // `thread/compact/start` only acks that compaction was kicked off.
-        // Real completion arrives later as a `thread/compacted` notification,
-        // typically after a fresh `thread/tokenUsage/updated`. Capture that
-        // signal so /compact can wait for actual completion.
+        // Completion is signalled in two ways depending on Codex version:
+        //   1. Legacy: a `thread/compacted` notification (now marked deprecated
+        //      in the protocol — newer Codex builds may stop firing it).
+        //   2. Current: an `item/completed` notification carrying a
+        //      `contextCompaction` ThreadItem.
+        // Listen for either so /compact reliably unblocks across versions.
         let pendingCompactionResolvers: Array<() => void> = [];
         const waitForCompactionNotification = (signal: AbortSignal): Promise<void> => {
             return new Promise<void>((resolve, reject) => {
@@ -590,8 +593,24 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
         });
 
+        const isCompactionCompletionSignal = (method: string, params: unknown): boolean => {
+            if (method === 'thread/compacted') {
+                return true;
+            }
+            if (method === 'item/completed') {
+                const paramsRecord = asRecord(params) ?? {};
+                const item = asRecord(paramsRecord.item);
+                // Codex normalises ThreadItem types to camelCase
+                // (e.g. `contextCompaction`); accept the snake_case form too
+                // for older builds that emitted `context_compaction`.
+                const itemType = asString(item?.type);
+                return itemType === 'contextCompaction' || itemType === 'context_compaction';
+            }
+            return false;
+        };
+
         appServerClient.setNotificationHandler((method, params) => {
-            if (method === 'thread/compacted' && pendingCompactionResolvers.length > 0) {
+            if (pendingCompactionResolvers.length > 0 && isCompactionCompletionSignal(method, params)) {
                 const resolvers = pendingCompactionResolvers;
                 pendingCompactionResolvers = [];
                 for (const resolve of resolvers) resolve();

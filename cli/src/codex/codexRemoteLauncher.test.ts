@@ -12,6 +12,7 @@ const harness = vi.hoisted(() => ({
     interruptedTurns: [] as Array<{ threadId: string; turnId: string }>,
     compactThreadIds: [] as string[],
     suppressTurnCompletion: false,
+    legacyCompactionNotification: false,
     remainingThreadSystemErrors: 0
 }));
 
@@ -113,13 +114,26 @@ vi.mock('./codexAppServerClient', () => {
         async compactThread(params?: { threadId?: string }): Promise<Record<string, never>> {
             const threadId = params?.threadId ?? 'thread-unknown';
             harness.compactThreadIds.push(threadId);
-            // The real app server replies to compact/start with an empty ack,
-            // then fires `thread/compacted` once compaction finishes. Mirror
-            // that here so codexRemoteLauncher's wait-for-completion path
-            // unblocks instead of hanging until test timeout.
-            const compacted = { thread: { id: threadId } };
-            harness.notifications.push({ method: 'thread/compacted', params: compacted });
-            this.notificationHandler?.('thread/compacted', compacted);
+            // codex >= 0.130 reports completion via an `item/completed`
+            // notification carrying a `contextCompaction` ThreadItem (the
+            // legacy `thread/compacted` notification is deprecated and no
+            // longer reliably emitted). Mirror the new shape here; tests
+            // that need to exercise the legacy path can override via
+            // `harness.legacyCompactionNotification`.
+            if (harness.legacyCompactionNotification) {
+                const compacted = { thread: { id: threadId } };
+                harness.notifications.push({ method: 'thread/compacted', params: compacted });
+                this.notificationHandler?.('thread/compacted', compacted);
+            } else {
+                const itemCompleted = {
+                    item: { type: 'contextCompaction', id: `compaction-${threadId}` },
+                    threadId,
+                    turnId: 'compaction-turn',
+                    completedAtMs: Date.now()
+                };
+                harness.notifications.push({ method: 'item/completed', params: itemCompleted });
+                this.notificationHandler?.('item/completed', itemCompleted);
+            }
             return {};
         }
 
@@ -258,6 +272,7 @@ describe('codexRemoteLauncher', () => {
         harness.interruptedTurns = [];
         harness.compactThreadIds = [];
         harness.suppressTurnCompletion = false;
+        harness.legacyCompactionNotification = false;
         harness.remainingThreadSystemErrors = 0;
     });
 
@@ -395,6 +410,24 @@ describe('codexRemoteLauncher', () => {
         expect(sessionEvents).toContainEqual({
             type: 'message',
             message: 'Compaction started'
+        });
+        expect(sessionEvents).toContainEqual({
+            type: 'message',
+            message: 'Compaction completed'
+        });
+    });
+
+    it('still completes /compact when codex emits the legacy thread/compacted notification', async () => {
+        harness.legacyCompactionNotification = true;
+        const { session, sessionEvents } = createSessionStub(['first message', '/compact']);
+
+        const exitReason = await codexRemoteLauncher(session as never);
+
+        expect(exitReason).toBe('exit');
+        expect(harness.compactThreadIds).toEqual(['thread-1']);
+        expect(harness.notifications).toContainEqual({
+            method: 'thread/compacted',
+            params: { thread: { id: 'thread-1' } }
         });
         expect(sessionEvents).toContainEqual({
             type: 'message',

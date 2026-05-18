@@ -458,6 +458,13 @@ export class AppServerEventConverter {
                 return events;
             }
 
+            // `contextCompaction` items are handled out-of-band by the
+            // launcher (to unblock /compact); silence them here so we
+            // do not log "Unhandled notification" for the new signal.
+            if (itemType === 'contextcompaction') {
+                return events;
+            }
+
             if (itemType === 'agentmessage') {
                 if (method === 'item/completed') {
                     if (this.completedAgentMessageItems.has(itemId)) {
