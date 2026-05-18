@@ -51,6 +51,29 @@ async function pathExists(path: string): Promise<boolean> {
     }
 }
 
+// `.git` as a bare directory is not enough — empty `.git/` directories
+// pop up in containers, chroots, and forgotten test sandboxes, and
+// flipping the skill-discovery heuristic on those is wrong. Match what
+// git itself does: a real repo has `.git/HEAD` (regular dir form) or a
+// `.git` file pointing to a worktree's gitdir.
+async function looksLikeGitRepo(directory: string): Promise<boolean> {
+    const gitPath = join(directory, '.git');
+    try {
+        const stats = await stat(gitPath);
+        if (stats.isFile()) {
+            // gitfile form (worktrees) — its existence as a regular file
+            // under a name git would create is enough.
+            return true;
+        }
+        if (stats.isDirectory()) {
+            return await pathExists(join(gitPath, 'HEAD'));
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
 async function listProjectSkillsRoots(workingDirectory?: string): Promise<string[]> {
     if (!workingDirectory) {
         return [];
@@ -61,7 +84,7 @@ async function listProjectSkillsRoots(workingDirectory?: string): Promise<string
     let currentDirectory = resolvedWorkingDirectory;
 
     while (true) {
-        if (await pathExists(join(currentDirectory, '.git'))) {
+        if (await looksLikeGitRepo(currentDirectory)) {
             return directories.flatMap(getProjectSkillsRoots);
         }
 
