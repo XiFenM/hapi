@@ -132,6 +132,11 @@ export default {
   'newSession.yolo': 'YOLO mode',
   'newSession.yolo.title': 'Bypass approvals and sandbox',
   'newSession.yolo.desc': 'Uses dangerous agent flags when spawning.',
+  'newSession.allowedTools': 'Auto-approved tools',
+  'newSession.allowedTools.desc': 'These tools skip every permission prompt for the whole session — including background sub-agents that can’t prompt you.',
+  'newSession.allowedTools.placeholder': 'Click to pick tools (optional)',
+  'newSession.allowedTools.summary': '{count} selected',
+  'newSession.allowedTools.clear': 'Clear',
   'newSession.create': 'Create',
   'newSession.creating': 'Creating…',
 

@@ -134,6 +134,11 @@ export default {
   'newSession.yolo': 'YOLO 模式',
   'newSession.yolo.title': '跳过审批和沙箱',
   'newSession.yolo.desc': '启动时使用危险的代理标志。',
+  'newSession.allowedTools': '自动允许使用的工具',
+  'newSession.allowedTools.desc': '整个会话期间这些工具会跳过权限确认 —— 包括无法弹窗的后台子 agent。',
+  'newSession.allowedTools.placeholder': '点击选择工具（可选）',
+  'newSession.allowedTools.summary': '已选 {count} 项',
+  'newSession.allowedTools.clear': '清空',
   'newSession.create': '创建',
   'newSession.creating': '创建中…',
 

@@ -948,5 +948,8 @@ export function buildCliArgs(
   } else if (yolo) {
     args.push('--yolo');
   }
+  if (agent === 'claude' && options.allowedTools && options.allowedTools.length > 0) {
+    args.push('--hapi-allow-tools', options.allowedTools.join(','));
+  }
   return args;
 }

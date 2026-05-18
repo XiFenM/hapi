@@ -13,6 +13,12 @@ export interface SpawnSessionOptions {
     token?: string
     sessionType?: 'simple' | 'worktree'
     worktreeName?: string
+    // Tools pre-approved for this session via `--allowedTools`. Useful for
+    // letting async/background sub-agents reach tools like WebFetch and
+    // WebSearch — those run in a context where permission prompts can't
+    // be surfaced, so they have to be granted up front. Only meaningful
+    // for `agent: 'claude'`.
+    allowedTools?: string[]
 }
 
 export type SpawnSessionResult =

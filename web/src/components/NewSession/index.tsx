@@ -29,6 +29,7 @@ import {
 } from './preferences'
 import { SessionTypeSelector } from './SessionTypeSelector'
 import { YoloToggle } from './YoloToggle'
+import { AllowedToolsSelector } from './AllowedToolsSelector'
 import { formatRunnerSpawnError } from '../../utils/formatRunnerSpawnError'
 
 export function NewSession(props: {
@@ -59,6 +60,7 @@ export function NewSession(props: {
     const [yoloMode, setYoloMode] = useState(loadPreferredYoloMode)
     const [sessionType, setSessionType] = useState<SessionType>('simple')
     const [worktreeName, setWorktreeName] = useState('')
+    const [allowedTools, setAllowedTools] = useState<string[]>([])
     const [directoryCreationConfirmed, setDirectoryCreationConfirmed] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const worktreeInputRef = useRef<HTMLInputElement>(null)
@@ -72,6 +74,9 @@ export function NewSession(props: {
     useEffect(() => {
         setModel('auto')
         setEffort('auto')
+        if (agent !== 'claude') {
+            setAllowedTools([])
+        }
     }, [agent])
 
     useEffect(() => {
@@ -331,7 +336,8 @@ export function NewSession(props: {
                 modelReasoningEffort: resolvedModelReasoningEffort,
                 yolo: yoloMode,
                 sessionType,
-                worktreeName: sessionType === 'worktree' ? (worktreeName.trim() || undefined) : undefined
+                worktreeName: sessionType === 'worktree' ? (worktreeName.trim() || undefined) : undefined,
+                allowedTools: agent === 'claude' && allowedTools.length > 0 ? allowedTools : undefined
             })
 
             if (result.type === 'success') {
@@ -436,6 +442,12 @@ export function NewSession(props: {
                 yoloMode={yoloMode}
                 isDisabled={isFormDisabled}
                 onToggle={setYoloMode}
+            />
+            <AllowedToolsSelector
+                agent={agent}
+                selected={allowedTools}
+                isDisabled={isFormDisabled}
+                onChange={setAllowedTools}
             />
 
             {(error ?? spawnError) ? (

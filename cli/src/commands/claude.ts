@@ -67,6 +67,15 @@ export const claudeCommand: CommandDefinition = {
                 unknownArgs.push('--effort', effort)
             } else if (arg === '--started-by') {
                 options.startedBy = args[++i] as 'runner' | 'terminal'
+            } else if (arg === '--hapi-allow-tools') {
+                const value = args[++i]
+                if (!value) {
+                    throw new Error('Missing --hapi-allow-tools value (comma-separated tool names)')
+                }
+                const tools = value.split(',').map((t) => t.trim()).filter((t) => t.length > 0)
+                if (tools.length > 0) {
+                    options.allowTools = [...(options.allowTools ?? []), ...tools]
+                }
             } else {
                 unknownArgs.push(arg)
                 if (i + 1 < args.length && !args[i + 1].startsWith('-')) {

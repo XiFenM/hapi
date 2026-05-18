@@ -30,6 +30,10 @@ export interface StartOptions {
     claudeEnvVars?: Record<string, string>
     claudeArgs?: string[]
     startedBy?: 'runner' | 'terminal'
+    // Extra tool names to pre-approve for this session. Merged into the
+    // session-level `--allowedTools` so even contexts that can't surface
+    // permission prompts (background / async sub-agents) can use them.
+    allowTools?: string[]
 }
 
 export async function runClaude(options: StartOptions = {}): Promise<void> {
@@ -362,7 +366,10 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             startingMode,
             messageQueue,
             api,
-            allowedTools: happyServer.toolNames.map(toolName => `mcp__hapi__${toolName}`),
+            allowedTools: [
+                ...happyServer.toolNames.map(toolName => `mcp__hapi__${toolName}`),
+                ...(options.allowTools ?? [])
+            ],
             onModeChange: createModeChangeHandler(session),
             onSessionReady: (sessionInstance) => {
                 currentSessionRef.current = sessionInstance;
