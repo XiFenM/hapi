@@ -118,6 +118,30 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         const appServerClient = this.appServerClient;
         const appServerEventConverter = new AppServerEventConverter();
 
+        // `thread/compact/start` only acks that compaction was kicked off.
+        // Real completion arrives later as a `thread/compacted` notification,
+        // typically after a fresh `thread/tokenUsage/updated`. Capture that
+        // signal so /compact can wait for actual completion.
+        let pendingCompactionResolvers: Array<() => void> = [];
+        const waitForCompactionNotification = (signal: AbortSignal): Promise<void> => {
+            return new Promise<void>((resolve, reject) => {
+                if (signal.aborted) {
+                    reject(new Error('Compaction aborted'));
+                    return;
+                }
+                const onAbort = () => {
+                    pendingCompactionResolvers = pendingCompactionResolvers.filter((r) => r !== resolveOnce);
+                    reject(new Error('Compaction aborted'));
+                };
+                const resolveOnce = () => {
+                    signal.removeEventListener('abort', onAbort);
+                    resolve();
+                };
+                signal.addEventListener('abort', onAbort, { once: true });
+                pendingCompactionResolvers.push(resolveOnce);
+            });
+        };
+
         const normalizeCommand = (value: unknown): string | undefined => {
             if (typeof value === 'string') {
                 const trimmed = value.trim();
@@ -567,6 +591,11 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         });
 
         appServerClient.setNotificationHandler((method, params) => {
+            if (method === 'thread/compacted' && pendingCompactionResolvers.length > 0) {
+                const resolvers = pendingCompactionResolvers;
+                pendingCompactionResolvers = [];
+                for (const resolve of resolvers) resolve();
+            }
             const events = appServerEventConverter.handleNotification(method, params);
             for (const event of events) {
                 const eventRecord = asRecord(event) ?? { type: undefined };
@@ -740,9 +769,11 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
             sendVisibleStatus('Compaction started');
             try {
+                const completion = waitForCompactionNotification(this.abortController.signal);
                 await appServerClient.compactThread({ threadId }, {
                     signal: this.abortController.signal
                 });
+                await completion;
                 sendVisibleStatus('Compaction completed');
             } catch (error) {
                 const detail = error instanceof Error ? error.message : String(error);
