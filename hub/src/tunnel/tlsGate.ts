@@ -58,16 +58,24 @@ function hostMatchesCertificate(host: string, cert: PeerCertificate): boolean {
         return altNames.some(name => name.type === 'DNS' && dnsNameMatchesHost(host, name.value))
     }
 
-    const commonName = cert.subject?.CN
-    if (!commonName) {
+    // Node's `Certificate.CN` is `string | string[]` to cover X.509 subjects
+    // with multi-value RDNs that carry more than one common name. Treat
+    // either shape uniformly — match if any CN matches.
+    const rawCommonName = cert.subject?.CN
+    const commonNames = Array.isArray(rawCommonName)
+        ? rawCommonName
+        : rawCommonName
+            ? [rawCommonName]
+            : []
+    if (commonNames.length === 0) {
         return false
     }
 
     if (hostIsIp) {
-        return commonName === host
+        return commonNames.some(name => name === host)
     }
 
-    return dnsNameMatchesHost(host, commonName)
+    return commonNames.some(name => dnsNameMatchesHost(host, name))
 }
 
 function parseCertDate(value: string | undefined): Date | null {
